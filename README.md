@@ -1,6 +1,6 @@
 Phân chia vai trò
 
-Member 1: Arduino & Firmware
+Member 1: Arduino & Firmware  
 Vai trò: lập trình vi điều khiển đọc cảm biến, gửi dữ liệu qua HTTP (GET/POST) lên server. Làm việc các file .ino
   Cách test độc lập:
 Dùng Serial Monitor để kiểm tra dữ liệu cảm biến đọc được có đúng không trước khi gửi đi.
