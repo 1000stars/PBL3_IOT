@@ -1,7 +1,7 @@
-Vi điều khiển: ESP32
-Cảm biến: Nhiệt độ, Độ ẩm không khí, Độ ẩm đất, Cường độ ánh sáng
-Thiết bị điều khiển: Động cơ bơm nước (bật/tắt tưới)
-Môi trường mô phỏng (giai đoạn 1): XAMPP chạy local host (Apache + MySQL + PHP)
+Vi điều khiển: ESP32  
+Cảm biến: Nhiệt độ, Độ ẩm không khí, Độ ẩm đất, Cường độ ánh sáng  
+Thiết bị điều khiển: Động cơ bơm nước (bật/tắt tưới)  
+Môi trường mô phỏng (giai đoạn 1): XAMPP chạy local host (Apache + MySQL + PHP)  
 Giai đoạn 2 (sau khi hoàn thiện): Đưa hệ thống lên Internet qua Cloudflare Tunnel, gắn tên miền tĩnh
 
 Phân chia vai trò
