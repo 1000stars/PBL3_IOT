@@ -1,3 +1,9 @@
+Vi điều khiển: ESP32
+Cảm biến: Nhiệt độ, Độ ẩm không khí, Độ ẩm đất, Cường độ ánh sáng
+Thiết bị điều khiển: Động cơ bơm nước (bật/tắt tưới)
+Môi trường mô phỏng (giai đoạn 1): XAMPP chạy local host (Apache + MySQL + PHP)
+Giai đoạn 2 (sau khi hoàn thiện): Đưa hệ thống lên Internet qua Cloudflare Tunnel, gắn tên miền tĩnh
+
 Phân chia vai trò
 
 Member 1: Arduino & Firmware  
@@ -6,11 +12,16 @@ Cách test độc lập:
 Dùng Serial Monitor để kiểm tra dữ liệu cảm biến đọc được có đúng không trước khi gửi đi.
 Gửi thử HTTP request tới một endpoint giả (webhook.site hoặc một file PHP đơn giản chỉ in dữ liệu nhận được) để chắc chắn định dạng gửi đúng như API contract.
 
-Member 2: API (GET/POST) & Database  
+Member 2: API (GET,POST, Control) & Database  
 Vai trò: thiết kế database, xây dựng các API nhận dữ liệu từ Arduino và cung cấp dữ liệu cho frontend. Làm việc với file (get.php, post.php, config.php)  
 Cách test độc lập:  
 Thống nhất trước "API contract" (endpoint, tham số, response mẫu dạng {status, message, data}).  
 Dùng Postman hoặc curl để gửi request giả lập, không cần chờ Arduino hay frontend thật.
+ php/
+    ├── post.php            ← ESP32 → Database
+    ├── get.php             ← Database → Web
+    ├── control.php         ← Web → lệnh điều khiển
+    └── login.php           ← đăng nhập
 
 Member 3: Frontend & giao diện tương tác người dùng  
 Vai trò: xây dựng giao diện hiển thị dữ liệu thiết bị, tương tác điều khiển (nếu có). Làm việc với file index.html, style.css, Jason.js  
