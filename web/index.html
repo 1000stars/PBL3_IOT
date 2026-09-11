@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Nông Trại Xanh — Giám sát nhà kính</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,500&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  :root{
+    --bg:#16231A; --card:#F3EFE1; --card-text:#1D2A17; --card-sub:#5F6E56;
+    --line:#3A4A34; --panel:#1E2E1A; --muted:#8A9280; --muted2:#C9D4BE;
+    --sun:#E8A33D; --water:#3E7CB4; --leaf:#5C8A54; --warm:#C1502E;
+    --sky:#4FA8D8; --sky-light:#7EC4EA;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:#F3EFE1;
+    font-family:'Be Vietnam Pro', sans-serif; padding:24px;
+  }
+  .wrap{max-width:1080px; margin:0 auto;}
+  h1,h2{font-family:'Fraunces', serif; margin:0;}
+  .header{
+    display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between;
+    gap:12px; border-bottom:1px solid rgba(79,168,216,0.4); padding-bottom:24px; margin-bottom:32px;
+  }
+  .eyebrow{color:var(--sky-light); font-size:14px; margin:0 0 4px; letter-spacing:.02em;}
+  .title{font-size:34px; font-weight:600; color:#F3EFE1;}
+  .status-group{display:flex; align-items:center; gap:16px; font-size:14px; color:var(--muted2);}
+  .pill{
+    display:flex; align-items:center; gap:6px; background:rgba(79,168,216,0.15);
+    border:1px solid rgba(79,168,216,0.4); border-radius:999px; padding:6px 14px; color:var(--sky-light);
+  }
+  .icon{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
+  .icon.sky{color:var(--sky);}
+
+  .hero{display:grid; grid-template-columns:2fr 1fr 1fr; gap:16px; margin-bottom:32px;}
+  @media(max-width:800px){ .hero{grid-template-columns:1fr;} }
+  .card{background:var(--card); color:var(--card-text); border-radius:16px; padding:24px;}
+  .card-sub{color:var(--card-sub); font-size:14px; margin:0 0 4px;}
+  .th-card{display:flex; align-items:center; justify-content:space-between;}
+  .big-num{font-size:44px; font-weight:600; line-height:1;}
+  .unit{font-size:18px; color:var(--card-sub);}
+  .hum-row{display:flex; align-items:center; gap:6px; margin-top:10px; color:var(--water); font-size:14px; font-weight:500;}
+  .light-card{display:flex; flex-direction:column; justify-content:space-between;}
+  .light-top{display:flex; align-items:center; justify-content:space-between;}
+  .gauge-num{font-size:22px; font-weight:600; text-align:center; margin-top:-8px;}
+  .soil-card{display:flex; align-items:center; gap:16px;}
+  .soil-num{font-size:28px; font-weight:600;}
+  .soil-tag{display:flex; align-items:center; gap:4px; color:var(--leaf); font-size:12px; margin-top:4px;}
+
+  .section{margin-bottom:32px;}
+  .section h2{font-size:20px; font-weight:500; margin-bottom:12px;}
+  .forecast-row{display:flex; gap:12px; overflow-x:auto; padding-bottom:6px;}
+  .fc-card{min-width:100px; background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:14px; display:flex; flex-direction:column; align-items:center; gap:6px;}
+  .fc-day{font-size:13px; color:var(--muted2);}
+  .fc-temp{display:flex; gap:6px; align-items:baseline; font-size:14px;}
+  .fc-low{color:var(--muted); font-size:12px;}
+  .fc-rain{color:var(--water); font-size:12px;}
+
+  .controls-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media(max-width:640px){ .controls-grid{grid-template-columns:1fr;} }
+  .ctrl-card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; display:flex; align-items:center; justify-content:space-between;}
+  .ctrl-left{display:flex; align-items:center; gap:12px;}
+  .ctrl-icon{width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center;}
+  .ctrl-name{font-weight:500; margin:0 0 2px;}
+  .ctrl-status{font-size:14px; color:var(--muted); margin:0;}
+  .switch{width:64px; height:36px; border-radius:999px; border:none; position:relative; cursor:pointer; transition:background .3s; flex-shrink:0;}
+  .switch-knob{position:absolute; top:4px; left:4px; width:28px; height:28px; border-radius:999px; background:#F3EFE1; display:flex; align-items:center; justify-content:center; transition:transform .3s;}
+
+  .chart-header{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;}
+  .range-group{display:flex; gap:4px; background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:4px;}
+  .range-btn{border:none; background:transparent; color:var(--muted); font-size:14px; padding:6px 14px; border-radius:999px; cursor:pointer; font-family:inherit;}
+  .range-btn.active{background:var(--leaf); color:#F3EFE1;}
+  .metric-row{display:flex; flex-wrap:wrap; gap:8px; margin-bottom:16px;}
+  .metric-chip{display:flex; align-items:center; gap:6px; border-radius:999px; border:1px solid var(--line); background:transparent; color:var(--muted); font-size:13px; padding:6px 12px; cursor:pointer; font-family:inherit;}
+  .dot{width:8px; height:8px; border-radius:999px;}
+  .chart-box{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:16px; height:320px; position:relative;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <div>
+      <p class="eyebrow">Trạm giám sát</p>
+      <h1 class="title">Nông Trại Thông Minh</h1>
+    </div>
+    <div class="status-group">
+      <div class="pill">
+        <svg class="icon" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
+        <span id="conn-label">Đang kết nối</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px;">
+        <svg class="icon sky" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span>Cập nhật lần cuối: <span id="time-label"></span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="card th-card">
+      <div>
+        <p class="card-sub">Nhiệt độ &amp; độ ẩm không khí</p>
+        <div style="display:flex; align-items:baseline; gap:6px;">
+          <span class="big-num" id="temp-val">26.4°</span><span class="unit">C</span>
+        </div>
+        <div class="hum-row">
+          <svg class="icon" viewBox="0 0 24 24" style="color:var(--water)"><path d="M12 2s6 7 6 11a6 6 0 1 1-12 0c0-4 6-11 6-11z"/></svg>
+          <span id="hum-val">65% độ ẩm</span>
+        </div>
+      </div>
+      <svg width="44" height="44" viewBox="0 0 24 24" style="stroke:var(--warm); fill:none; stroke-width:1.8; opacity:.8;"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>
+    </div>
+
+    <div class="card light-card">
+      <div class="light-top">
+        <p class="card-sub" style="margin:0;">Cường độ ánh sáng</p>
+        <svg class="icon" viewBox="0 0 24 24" style="color:var(--sun); width:20px; height:20px;"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </div>
+      <svg viewBox="0 0 180 100" style="width:100%; height:96px;">
+        <path d="M20,90 A70,70 0 0,1 160,90" fill="none" stroke="#2B3A26" stroke-width="12" stroke-linecap="round"/>
+        <path id="gauge-arc" d="M20,90 A70,70 0 0,1 160,90" fill="none" stroke="var(--sun)" stroke-width="12" stroke-linecap="round"/>
+      </svg>
+      <p class="gauge-num" id="light-val">24.5 klux</p>
+    </div>
+
+    <div class="card soil-card">
+      <svg width="64" height="64" viewBox="0 0 90 90" style="flex-shrink:0;">
+        <rect x="10" y="14" width="70" height="66" rx="10" fill="none" stroke="#3A4A34" stroke-width="4"/>
+        <rect id="soil-fill" x="12" y="50" width="66" height="28" rx="7" fill="var(--leaf)"/>
+        <path d="M45,14 C45,4 58,4 58,14" fill="none" stroke="#3A4A34" stroke-width="4" stroke-linecap="round"/>
+      </svg>
+      <div>
+        <p class="card-sub">Độ ẩm đất</p>
+        <span class="soil-num" id="soil-val">38%</span>
+        <div class="soil-tag">
+          <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; color:var(--leaf);"><path d="M7 20h10M12 20V10M12 10C7 10 5 6 5 3c4 0 7 2 7 7zM12 10c5 0 7-4 7-7-4 0-7 2-7 7z"/></svg>
+          <span>Ổn định</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Dự báo thời tiết</h2>
+    <div class="forecast-row" id="forecast-row"></div>
+  </div>
+
+  <div class="section">
+    <h2>Điều khiển động cơ</h2>
+    <div class="controls-grid">
+      <div class="ctrl-card">
+        <div class="ctrl-left">
+          <div class="ctrl-icon" style="background:#3A2B18;">
+            <svg class="icon" viewBox="0 0 24 24" style="width:20px; height:20px; color:var(--sun);"><path d="M22 12a10 10 0 1 0-20 0"/><path d="M2 12h20"/><path d="M12 12v9"/></svg>
+          </div>
+          <div>
+            <p class="ctrl-name">Dàn che nắng</p>
+            <p class="ctrl-status" id="shade-status">Đang đóng</p>
+          </div>
+        </div>
+        <button class="switch" id="shade-switch" style="background:#2B3A26;">
+          <span class="switch-knob" id="shade-knob" style="transform:translateX(0);">
+            <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; color:#8A9280;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
+          </span>
+        </button>
+      </div>
+
+      <div class="ctrl-card">
+        <div class="ctrl-left">
+          <div class="ctrl-icon" style="background:#16283A;">
+            <svg class="icon" viewBox="0 0 24 24" style="width:20px; height:20px; color:var(--water);"><path d="M12 2s6 7 6 11a6 6 0 1 1-12 0c0-4 6-11 6-11z"/></svg>
+          </div>
+          <div>
+            <p class="ctrl-name">Tưới cây thủ công</p>
+            <p class="ctrl-status" id="water-status">Đã tắt</p>
+          </div>
+        </div>
+        <button class="switch" id="water-switch" style="background:#2B3A26;">
+          <span class="switch-knob" id="water-knob" style="transform:translateX(0);">
+            <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; color:#8A9280;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
+          </span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="chart-header">
+      <h2>Biểu đồ cảm biến theo thời gian</h2>
+      <div class="range-group" id="range-group"></div>
+    </div>
+    <div class="metric-row" id="metric-row"></div>
+    <div class="chart-box">
+      <canvas id="sensorChart" role="img" aria-label="Biểu đồ cảm biến nhiệt độ, độ ẩm, ánh sáng và độ ẩm đất theo thời gian"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  const RANGES = [
+    { key:'1h', label:'1 giờ', points:12, fmt:i=>(i*5)+'p' },
+    { key:'24h', label:'24 giờ', points:24, fmt:i=>i+'h' },
+    { key:'7d', label:'7 ngày', points:7, fmt:i=>'N'+(i+1) },
+    { key:'30d', label:'30 ngày', points:30, fmt:i=>(i+1) },
+  ];
+  const METRICS = [
+    { key:'temp', label:'Nhiệt độ', unit:'°C', color:'#C1502E' },
+    { key:'humidity', label:'Độ ẩm không khí', unit:'%', color:'#3E7CB4' },
+    { key:'light', label:'Ánh sáng', unit:'klux', color:'#E8A33D' },
+    { key:'soil', label:'Độ ẩm đất', unit:'%', color:'#5C8A54' },
+  ];
+  const FORECAST = [
+    { day:'Hôm nay', icon:'sun', high:33, low:25, rain:10 },
+    { day:'Thứ 3', icon:'cloud-sun', high:31, low:24, rain:20 },
+    { day:'Thứ 4', icon:'cloud-rain', high:28, low:23, rain:70 },
+    { day:'Thứ 5', icon:'cloud-drizzle', high:27, low:23, rain:55 },
+    { day:'Thứ 6', icon:'sun', high:32, low:24, rain:5 },
+    { day:'Thứ 7', icon:'cloud-sun', high:30, low:24, rain:15 },
+  ];
+  const ICONS = {
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
+    'cloud-sun': '<path d="M12 2v1M4.2 4.2l.7.7M2 11h1M18.8 4.9l-.7.7"/><path d="M9 16a4 4 0 1 1 6.9-3.9A4.5 4.5 0 0 1 15.5 21H8a3 3 0 0 1-1-5.8"/>',
+    'cloud-rain': '<path d="M16 13v8M8 13v8M12 15v8"/><path d="M20 16.6A5 5 0 0 0 18 7h-1.3A7 7 0 1 0 4 14.5"/>',
+    'cloud-drizzle': '<path d="M8 19v1M8 14v1M16 19v1M16 14v1M12 21v1M12 16v1"/><path d="M20 12.6A5 5 0 0 0 18 3h-1.3A7 7 0 1 0 4 10.5"/>',
+  };
+
+  let activeMetrics = ['temp','humidity'];
+  let shadeOn = false, waterOn = false;
+  let chart;
+
+  function seededRandom(seed){ let s=seed; return ()=>{ s=(s*9301+49297)%233280; return s/233280; }; }
+
+  function generateData(rangeKey){
+    const cfg = RANGES.find(r=>r.key===rangeKey);
+    const rand = seededRandom(rangeKey.length*37+11);
+    const labels=[], temp=[], humidity=[], light=[], soil=[];
+    for(let i=0;i<cfg.points;i++){
+      const phase = (i/cfg.points)*Math.PI*2;
+      labels.push(cfg.fmt(i));
+      temp.push(+(26+5*Math.sin(phase-1)+(rand()-0.5)*1.4).toFixed(1));
+      humidity.push(+Math.min(95,Math.max(30,65-10*Math.sin(phase-1)+(rand()-0.5)*4)).toFixed(0));
+      light.push(+Math.max(0,42*Math.sin(phase/2)+(rand()-0.5)*5).toFixed(1));
+      soil.push(+Math.min(70,Math.max(15,38+6*Math.sin(phase+1)+(rand()-0.5)*3)).toFixed(0));
+    }
+    return { labels, temp, humidity, light, soil };
+  }
+
+  function renderForecast(){
+    const row = document.getElementById('forecast-row');
+    row.innerHTML = FORECAST.map(f => `
+      <div class="fc-card">
+        <span class="fc-day">${f.day}</span>
+        <svg class="icon" viewBox="0 0 24 24" style="width:28px; height:28px; color:var(--sun);">${ICONS[f.icon]}</svg>
+        <div class="fc-temp"><span>${f.high}°</span><span class="fc-low">${f.low}°</span></div>
+        <span class="fc-rain">${f.rain}% mưa</span>
+      </div>
+    `).join('');
+  }
+
+  function renderRangeButtons(current){
+    const group = document.getElementById('range-group');
+    group.innerHTML = RANGES.map(r => `<button class="range-btn ${r.key===current?'active':''}" data-range="${r.key}">${r.label}</button>`).join('');
+    group.querySelectorAll('.range-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentRange = btn.dataset.range;
+        renderRangeButtons(currentRange);
+        updateChart();
+      });
+    });
+  }
+
+  function renderMetricChips(){
+    const row = document.getElementById('metric-row');
+    row.innerHTML = METRICS.map(m => {
+      const active = activeMetrics.includes(m.key);
+      return `<button class="metric-chip" data-metric="${m.key}" style="border-color:${active?m.color:'#3A4A34'}; background:${active?m.color+'22':'transparent'}; color:${active?m.color:'#8A9280'};">
+        <span class="dot" style="background:${m.color};"></span>${m.label}
+      </button>`;
+    }).join('');
+    row.querySelectorAll('.metric-chip').forEach(chip => {
+      chip.addEventListener('click', () => {
+        const key = chip.dataset.metric;
+        if(activeMetrics.includes(key)) activeMetrics = activeMetrics.filter(k=>k!==key);
+        else activeMetrics = [...activeMetrics, key];
+        renderMetricChips();
+        updateChart();
+      });
+    });
+  }
+
+  let currentRange = '24h';
+
+  function updateChart(){
+    const data = generateData(currentRange);
+    const latest = {
+      temp: data.temp[data.temp.length-1],
+      humidity: data.humidity[data.humidity.length-1],
+      light: data.light[data.light.length-1],
+      soil: data.soil[data.soil.length-1],
+    };
+    document.getElementById('temp-val').textContent = latest.temp + '°';
+    document.getElementById('hum-val').textContent = latest.humidity + '% độ ẩm';
+    document.getElementById('light-val').textContent = latest.light + ' klux';
+    document.getElementById('soil-val').textContent = latest.soil + '%';
+
+    const pct = Math.min(1, latest.light/60);
+    const circumference = Math.PI*70;
+    document.getElementById('gauge-arc').setAttribute('stroke-dasharray', (pct*circumference)+' '+circumference);
+
+    const soilPct = Math.min(1, Math.max(0, latest.soil/100));
+    const fillH = 64*soilPct;
+    document.getElementById('soil-fill').setAttribute('y', 78-fillH);
+    document.getElementById('soil-fill').setAttribute('height', fillH);
+
+    const datasets = METRICS.filter(m => activeMetrics.includes(m.key)).map(m => ({
+      label: m.label+' ('+m.unit+')',
+      data: data[m.key],
+      borderColor: m.color,
+      backgroundColor: m.color,
+      borderWidth: 2,
+      pointRadius: 0,
+      tension: 0.35,
+    }));
+
+    if(chart){
+      chart.data.labels = data.labels;
+      chart.data.datasets = datasets;
+      chart.update();
+    } else {
+      const ctx = document.getElementById('sensorChart');
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: data.labels, datasets },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          scales: {
+            x: { grid: { display:false }, ticks: { color:'#8A9280', font:{ family:"'Be Vietnam Pro'" } } },
+            y: { grid: { color:'#2B3A26' }, ticks: { color:'#8A9280', font:{ family:"'Be Vietnam Pro'" } } },
+          },
+          plugins: {
+            legend: { labels: { color:'#C9D4BE', font:{ family:"'Be Vietnam Pro'" } } },
+            tooltip: { backgroundColor:'#F3EFE1', titleColor:'#1D2A17', bodyColor:'#1D2A17' },
+          },
+        },
+      });
+    }
+  }
+
+  function setSwitch(id, knobId, statusId, on, onLabel, offLabel, color){
+    document.getElementById(id).style.background = on ? color : '#2B3A26';
+    document.getElementById(knobId).style.transform = on ? 'translateX(28px)' : 'translateX(0)';
+    document.getElementById(statusId).textContent = on ? onLabel : offLabel;
+  }
+
+  document.getElementById('shade-switch').addEventListener('click', () => {
+    shadeOn = !shadeOn;
+    setSwitch('shade-switch','shade-knob','shade-status', shadeOn, 'Đang mở', 'Đang đóng', '#E8A33D');
+  });
+  document.getElementById('water-switch').addEventListener('click', () => {
+    waterOn = !waterOn;
+    setSwitch('water-switch','water-knob','water-status', waterOn, 'Đang tưới nước', 'Đã tắt', '#3E7CB4');
+  });
+
+  function updateClock(){
+    const now = new Date();
+    const time = now.toLocaleTimeString('vi-VN', { hour:'2-digit', minute:'2-digit' });
+    const date = now.toLocaleDateString('vi-VN', { weekday:'long', day:'numeric', month:'long' });
+    document.getElementById('time-label').textContent = date.charAt(0).toUpperCase()+date.slice(1)+', '+time;
+  }
+
+  renderForecast();
+  renderRangeButtons(currentRange);
+  renderMetricChips();
+  updateChart();
+  updateClock();
+  setInterval(updateClock, 30000);
+</script>
+</body>
+</html>
