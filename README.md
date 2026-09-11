@@ -30,11 +30,11 @@ Dùng Postman hoặc curl để gửi request giả lập, không cần chờ Ar
     Gọi API login qua Postman với 3 trường hợp: đúng ID + đúng mật khẩu, đúng ID + sai mật khẩu, ID không tồn tại — kiểm tra response và việc tạo session có đúng không.    
     Test giao diện: nhập đúng → chuyển trang (redirect) thành công; nhập sai → hiện thông báo lỗi rõ ràng.
     
-Member 3: Frontend & giao diện tương tác người dùng, login  ( sơn )
+Member 3: Frontend & giao diện tương tác người dùng, login  ( sơn )  
 Vai trò: xây dựng giao diện hiển thị dữ liệu thiết bị, tương tác điều khiển (nếu có). Làm việc với file index.html, style.css, Jason.js, Login folder 
 Giao diện login: 1 form nhập ID (username) và mật khẩu.   
 * Mở rộng: xem được dự báo thời tiết là lợi thế
-Cách test độc lập:  
+  Cách test độc lập:  
 Dùng dữ liệu JSON giả (mock data) đúng theo API contract để code trước, không cần chờ người 2 xong API thật.
 Sau đó thay mock data bằng API thật để kiểm tra tích hợp.
 
