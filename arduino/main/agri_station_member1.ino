@@ -5,6 +5,7 @@
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
+#include <BH1750.h>
 
 // ============================================================
 // CẤU HÌNH WIFI & SERVER
@@ -21,9 +22,8 @@ const int   HTTP_MAX_RETRY    = 3;
 // ============================================================
 #define PIN_SOIL_MOISTURE 34   // Analog - ADC1_CH6 (input-only)
 #define PIN_DHT11          4   // Digital 1-wire
-#define PIN_LIGHT_SENSOR  35   // Analog - ADC1_CH7 (input-only)
 #define PIN_RELAY_PUMP    23   // Digital output
-#define PIN_OLED_SDA      21
+#define PIN_OLED_SDA      21   // I2C dùng chung cho OLED + BH1750
 #define PIN_OLED_SCL      22
 
 #define DHTTYPE DHT11
@@ -33,6 +33,8 @@ DHT dht(PIN_DHT11, DHTTYPE);
 #define SCREEN_HEIGHT 64
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
 
+BH1750 lightMeter;
+
 // ============================================================
 // NGƯỠNG & THAM SỐ HỆ THỐNG
 // ============================================================
@@ -40,15 +42,17 @@ int soilMoistureThreshold = 30;      // %
 const int ADC_SAMPLES     = 15;      // số lần lấy mẫu để trung bình (giảm nhiễu ADC)
 
 // ---- Non-blocking timing: mỗi tác vụ có mốc thời gian riêng ----
-unsigned long lastSensorReadTime = 0;
-unsigned long lastOledUpdateTime = 0;
-unsigned long lastHttpSendTime   = 0;
-unsigned long lastWifiCheckTime  = 0;
+unsigned long lastFullSensorReadTime = 0;  // quét toàn bộ cảm biến (bình thường)
+unsigned long lastSoilQuickReadTime  = 0;  // quét riêng độ ẩm đất khi bơm đang bật
+unsigned long lastOledUpdateTime     = 0;
+unsigned long lastHttpSendTime       = 0;
+unsigned long lastWifiCheckTime      = 0;
 
-const unsigned long SENSOR_READ_INTERVAL = 2000;   // DHT11 không nên đọc nhanh hơn 2s
-const unsigned long OLED_UPDATE_INTERVAL = 1000;
-const unsigned long HTTP_SEND_INTERVAL   = 10000;
-const unsigned long WIFI_CHECK_INTERVAL  = 5000;
+const unsigned long SENSOR_READ_INTERVAL = 60UL * 1000;      // 1 phút/lần
+const unsigned long SOIL_QUICK_INTERVAL  = 2UL * 1000;       // 2 giây/lần khi bơm bật
+const unsigned long OLED_UPDATE_INTERVAL = 1UL * 1000;
+const unsigned long HTTP_SEND_INTERVAL   = 10UL * 60 * 1000; // 10 phút/lần
+const unsigned long WIFI_CHECK_INTERVAL  = 5UL * 1000;
 
 // ============================================================
 // 4. CẤU TRÚC DỮ LIỆU CẢM BIẾN DÙNG CHUNG
@@ -57,7 +61,7 @@ struct SensorData {
   float soilMoisture   = 0;
   float temperature    = 0;
   float humidity       = 0;
-  float lightIntensity = 0;
+  float lightLux        = 0;    // đổi từ % sang Lux (BH1750)
   bool  pumpStatus     = false;
   bool  dhtValid       = false; // để biết dữ liệu DHT11 có đáng tin không
 };
@@ -92,12 +96,20 @@ void setup() {
     display.display();
   }
 
+  if (!lightMeter.begin(BH1750::CONTINUOUS_HIGH_RES_MODE)) {
+    Serial.println("Khong tim thay cam bien BH1750!");
+  }
+
   connectWiFi();
 
   // (thành viên khác - tự thêm phần cứng của mình đi nhé):
   // keypadInit();
   // jsnSr04tInit();
   // hallSensorInit();
+
+  // Đọc 1 lần ngay khi khởi động để có dữ liệu hiển thị/gửi sớm
+  readAllSensors();
+  controlPump();
 }
 
 // ================================================================
@@ -111,10 +123,20 @@ void loop() {
     checkWiFiReconnect();
   }
 
-  if (now - lastSensorReadTime >= SENSOR_READ_INTERVAL) {
-    lastSensorReadTime = now;
-    readAllSensors();
-    controlPump();
+  if (currentData.pumpStatus) {
+    // Bơm đang bật -> quét độ ẩm đất nhanh (2s) để biết khi nào đủ ẩm thì tắt bơm
+    if (now - lastSoilQuickReadTime >= SOIL_QUICK_INTERVAL) {
+      lastSoilQuickReadTime = now;
+      currentData.soilMoisture = readSoilMoisture();
+      controlPump();
+    }
+  } else {
+    // Bình thường -> quét toàn bộ cảm biến mỗi 1 phút
+    if (now - lastFullSensorReadTime >= SENSOR_READ_INTERVAL) {
+      lastFullSensorReadTime = now;
+      readAllSensors();
+      controlPump();
+    }
   }
 
   if (now - lastOledUpdateTime >= OLED_UPDATE_INTERVAL) {
@@ -164,8 +186,8 @@ void checkWiFiReconnect() {
 //              ĐỌC CẢM BIẾN (có oversampling giảm nhiễu ADC)
 // ================================================================
 void readAllSensors() {
-  currentData.soilMoisture   = readSoilMoisture();
-  currentData.lightIntensity = readLightIntensity();
+  currentData.soilMoisture = readSoilMoisture();
+  currentData.lightLux     = readLightLux();
 
   float t = dht.readTemperature();
   float h = dht.readHumidity();
@@ -196,11 +218,13 @@ float readSoilMoisture() {
   return constrain(percent, 0, 100);
 }
 
-float readLightIntensity() {
-  int raw = readAnalogAveraged(PIN_LIGHT_SENSOR);
-  // nếu chuyển sang module I2C chuẩn lux (VD BH1750) thì thay hàm này
-  float percent = map(raw, 0, 4095, 0, 100);//nhớ đổi cho đúng với giá trị của censor
-  return constrain(percent, 0, 100);
+float readLightLux() {
+  float lux = lightMeter.readLightLevel();
+  if (lux < 0) {
+    Serial.println("Loi doc BH1750");
+    return currentData.lightLux; // giữ giá trị cũ nếu đọc lỗi
+  }
+  return lux;
 }
 
 // ================================================================
@@ -234,7 +258,7 @@ void updateOLED() {
   display.printf("Do am dat: %.1f%%\n", currentData.soilMoisture);
   display.printf("Nhiet do : %.1f C\n", currentData.temperature);
   display.printf("Do am khong khi : %.1f%%\n", currentData.humidity);
-  display.printf("Anh sang : %.1f%%\n", currentData.lightIntensity);
+  display.printf("Anh sang : %.1f lux\n", currentData.lightLux);
   display.printf("Bom      : %s\n", currentData.pumpStatus ? "BAT" : "TAT");
   display.display();
   //(thành viên keypad): tạo hàm updateOLEDMenu() riêng cho chế độ cài đặt.
@@ -254,7 +278,7 @@ void sendDataHTTP() {
   doc["soil"]        = round(currentData.soilMoisture * 10) / 10.0;
   doc["temperature"] = round(currentData.temperature * 10) / 10.0;
   doc["humidity"]    = round(currentData.humidity * 10) / 10.0;
-  doc["light"]       = round(currentData.lightIntensity * 10) / 10.0;
+  doc["light_lux"]   = round(currentData.lightLux * 10) / 10.0;
   doc["pump"]        = currentData.pumpStatus;
   // các thành viên khác thêm field vào doc, ví dụ:
   // doc["waterDistance"] = waterDistance;
