@@ -9,7 +9,7 @@ date_default_timezone_set('Asia/Ho_Chi_Minh');
 
 // ===== Cau hinh database =====
 $host    = '127.0.0.1';
-$db      = 'pbl3_iot';
+$db      = 'pbl3my';
 $user    = 'root';
 $pass    = '';
 $charset = 'utf8mb4';
