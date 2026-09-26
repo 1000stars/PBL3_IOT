@@ -12,7 +12,7 @@ header("Access-Control-Allow-Headers: Content-Type");
 // Database configuration
 // =========================
 $host = '127.0.0.1';
-$db   = 'pbl3_iot';
+$db   = 'pbl3my';
 $user = 'root';
 $pass = '';
 $charset = 'utf8mb4';
@@ -157,7 +157,7 @@ try {
     // INSERT dữ liệu
     // =========================
     $sql = "INSERT INTO `$table_name` (
-                temp,
+                tempt,
                 humidity,
                 moisture,
                 light
