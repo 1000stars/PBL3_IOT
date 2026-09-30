@@ -10,9 +10,9 @@
 // ============================================================
 // CẤU HÌNH WIFI & SERVER
 // ============================================================
-const char* WIFI_SSID     = "YOUR_WIFI_SSID";
-const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
-const char* SERVER_URL    = "http://your-server.com/api/data";
+const char* WIFI_SSID     = "Wifi";
+const char* WIFI_PASSWORD = "MatKhau";
+const char* SERVER_URL = "http://IP_ADDRESS/Api/Post.php"; //ipconfig dia chi IPV4
 
 const int   HTTP_TIMEOUT_MS   = 5000;
 const int   HTTP_MAX_RETRY    = 3;
@@ -52,6 +52,7 @@ const unsigned long SENSOR_READ_INTERVAL = 60UL * 1000;      // 1 phút/lần
 const unsigned long SOIL_QUICK_INTERVAL  = 2UL * 1000;       // 2 giây/lần khi bơm bật
 const unsigned long OLED_UPDATE_INTERVAL = 1UL * 1000;
 const unsigned long HTTP_SEND_INTERVAL   = 10UL * 60 * 1000; // 10 phút/lần
+//const unsigned long HTTP_SEND_INTERVAL = 10UL * 1000; // 10 giây để test
 const unsigned long WIFI_CHECK_INTERVAL  = 5UL * 1000;
 
 // ============================================================
@@ -76,7 +77,7 @@ void setup() {
   delay(1000);
 
   pinMode(PIN_RELAY_PUMP, OUTPUT);
-  digitalWrite(PIN_RELAY_PUMP, LOW);
+digitalWrite(PIN_RELAY_PUMP, LOW);
 
   // ESP32 ADC: nếu cảm biến ra gần 3.3V ở đầu dải, có thể cần chỉnh attenuation
   analogSetAttenuation(ADC_11db); // cho phép đọc tới ~3.3V
@@ -110,6 +111,7 @@ void setup() {
   // Đọc 1 lần ngay khi khởi động để có dữ liệu hiển thị/gửi sớm
   readAllSensors();
   controlPump();
+  printSensorValues();
 }
 
 // ================================================================
@@ -136,6 +138,7 @@ void loop() {
       lastFullSensorReadTime = now;
       readAllSensors();
       controlPump();
+      printSensorValues();
     }
   }
 
@@ -170,7 +173,7 @@ void connectWiFi() {
     Serial.print(".");
   }
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nDa ket noi WiFi. IP: " + WiFi.localIP().toString());
+Serial.println("\nDa ket noi WiFi. IP: " + WiFi.localIP().toString());
   } else {
     Serial.println("\nKhong the ket noi WiFi, se thu lai sau.");
   }
@@ -227,6 +230,21 @@ float readLightLux() {
   return lux;
 }
 
+void printSensorValues() {
+  Serial.println("==============================");
+  Serial.println("     GIA TRI CAM BIEN");
+  Serial.println("==============================");
+
+  Serial.printf("Do am dat   : %.1f %%\n", currentData.soilMoisture);
+  Serial.printf("Nhiet do    : %.1f C\n", currentData.temperature);
+  Serial.printf("Do am KK    : %.1f %%\n", currentData.humidity);
+  Serial.printf("Anh sang    : %.1f lux\n", currentData.lightLux);
+  Serial.printf("Bom         : %s\n",
+                currentData.pumpStatus ? "BAT" : "TAT");
+
+  Serial.println("==============================");
+}
+
 // ================================================================
 //              ĐIỀU KHIỂN BƠM (relay)
 // ================================================================
@@ -259,7 +277,7 @@ void updateOLED() {
   display.printf("Nhiet do : %.1f C\n", currentData.temperature);
   display.printf("Do am khong khi : %.1f%%\n", currentData.humidity);
   display.printf("Anh sang : %.1f lux\n", currentData.lightLux);
-  display.printf("Bom      : %s\n", currentData.pumpStatus ? "BAT" : "TAT");
+display.printf("Bom      : %s\n", currentData.pumpStatus ? "BAT" : "TAT");
   display.display();
   //(thành viên keypad): tạo hàm updateOLEDMenu() riêng cho chế độ cài đặt.
 }
@@ -273,24 +291,14 @@ void sendDataHTTP() {
     return;
   }
 
-  // Build JSON payload bằng ArduinoJson (an toàn hơn nối chuỗi tay)
-  StaticJsonDocument<256> doc;
-  doc["soil"]        = round(currentData.soilMoisture * 10) / 10.0;
-  doc["temperature"] = round(currentData.temperature * 10) / 10.0;
-  doc["humidity"]    = round(currentData.humidity * 10) / 10.0;
-  doc["light_lux"]   = round(currentData.lightLux * 10) / 10.0;
-  doc["pump"]        = currentData.pumpStatus;
-  // các thành viên khác thêm field vào doc, ví dụ:
-  // doc["waterDistance"] = waterDistance;
-  // doc["hall1"] = hall1State;
-  // doc["hall2"] = hall2State;
-
-  String payload;
-  serializeJson(doc, payload);
+  String query = "temp=" + String(currentData.temperature, 1) +
+                 "&humidity=" + String(currentData.humidity, 1) +
+                 "&moisture=" + String(currentData.soilMoisture, 1) +
+                 "&light=" + String(currentData.lightLux, 1);
 
   bool success = false;
   for (int attempt = 1; attempt <= HTTP_MAX_RETRY && !success; attempt++) {
-    success = sendDataPOST(payload);
+    success = sendDataGET(query);
     if (!success && attempt < HTTP_MAX_RETRY) {
       Serial.printf("Gui that bai, thu lai lan %d/%d...\n", attempt + 1, HTTP_MAX_RETRY);
       delay(500);
@@ -299,7 +307,6 @@ void sendDataHTTP() {
 
   if (!success) {
     Serial.println("Gui lai di.");
-    // TODO: có thể lưu payload vào buffer/SPIFFS để gửi bù sau khi có mạng lại
   }
 }
 
