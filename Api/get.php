@@ -10,7 +10,7 @@ $db   = 'pbl3my';
 $user = 'root';     // chú ý
 $pass = '';     // chú ý
 $charset = 'utf8mb4';
-
+//ko
 // Nhận tham số
 $start_time = isset($_GET['start_time']) ? $_GET['start_time'].' 00:00:00' : null;
 $end_time = isset($_GET['end_time']) ? $_GET['end_time'].' 23:59:59' : null;
