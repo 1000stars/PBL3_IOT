@@ -13,7 +13,7 @@ const char* WIFI_SSID = "HUY HOANG";
 const char* WIFI_PASSWORD = "16022005";
 
 // Thay IP_ADDRESS bang IPv4 cua may tinh chay XAMPP
-const char* SERVER_URL = "http://192.168.1.100/Api/Post.php";
+const char* SERVER_URL = "http://192.168.1.12/Api/Post.php";
 
 // ==================================================
 // 2. CAU HINH CHAN

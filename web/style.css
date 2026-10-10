@@ -49,8 +49,7 @@ h1,h2{font-family:'Fraunces', serif; margin:0;}
 .fc-low{color:var(--muted); font-size:12px;}
 .fc-rain{color:var(--water); font-size:12px;}
 
-.controls-grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
-@media(max-width:640px){ .controls-grid{grid-template-columns:1fr;} }
+.controls-grid{display:grid; grid-template-columns:minmax(0, 1fr); gap:16px; max-width:520px;}
 .ctrl-card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; display:flex; align-items:center; justify-content:space-between;}
 .ctrl-left{display:flex; align-items:center; gap:12px;}
 .ctrl-icon{width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center;}
