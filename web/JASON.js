@@ -297,6 +297,7 @@ async function refreshData() {
 		end_time: formatDate(new Date()),
 	});
 	const connectionLabel = document.getElementById('conn-label');
+	const connectionStatus = document.getElementById('connection-status');
 
 	try {
 		const response = await fetch(`${API_URL}?${params}`, { cache: 'no-store' });
@@ -315,12 +316,14 @@ async function refreshData() {
 			.sort((a, b) => a.timestamp - b.timestamp);
 
 		currentRecords = records;
+		connectionStatus.classList.remove('disconnected');
 		connectionLabel.textContent = records.length ? 'Đã kết nối' : 'Chưa có dữ liệu';
 		if (records.length) updateSensorCards(records[records.length - 1]);
 		updateChart(records);
 	} catch (error) {
 		if (sequence !== requestSequence) return;
-		connectionLabel.textContent = 'Mất kết nối API';
+		connectionStatus.classList.add('disconnected');
+		connectionLabel.textContent = 'Mất kết nối';
 		console.error('Không thể tải dữ liệu cảm biến:', error);
 	}
 }

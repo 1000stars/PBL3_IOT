@@ -22,6 +22,9 @@ h1,h2{font-family:'Fraunces', serif; margin:0;}
 	display:flex; align-items:center; gap:6px; background:rgba(79,168,216,0.15);
 	border:1px solid rgba(79,168,216,0.4); border-radius:999px; padding:6px 14px; color:var(--sky-light);
 }
+.pill.disconnected{background:rgba(138,146,128,0.12); border-color:rgba(138,146,128,0.4); color:var(--muted);}
+.wifi-slash{display:none;}
+.pill.disconnected .wifi-slash{display:block;}
 .icon{width:16px; height:16px; stroke:currentColor; fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round;}
 .icon.sky{color:var(--sky);}
 
