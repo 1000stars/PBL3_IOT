@@ -3,7 +3,7 @@ Cảm biến: cảm biến DHT11, Độ ẩm đất giao tiếp I2c, Cường đ
 Màn Hình Oled 1.3
 Thiết bị điều khiển: Động cơ bơm nước (bật/tắt tưới)  
 Môi trường mô phỏng (giai đoạn 1): XAMPP chạy local host  
-Giao tiếp sử dụng HTPP và MQTTX 
+Giao tiếp sử dụng HTPP và MQTTx
 Giai đoạn 2 (sau khi hoàn thiện): Đưa hệ thống lên Internet qua Cloudflare Tunnel, gắn tên miền tĩnh aaaaa
 
 Phân chia vai trò
