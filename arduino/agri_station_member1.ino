@@ -57,7 +57,7 @@ const int SOIL_WET_RAW = 1200;
 const unsigned long SENSOR_INTERVAL = 60000UL;     // 60 giay
 const unsigned long PUMP_CHECK_INTERVAL = 2000UL;  // 2 giay
 const unsigned long OLED_INTERVAL = 1000UL;        // 1 giay
-const unsigned long HTTP_INTERVAL = 600000UL;      // 10 phut
+const unsigned long HTTP_INTERVAL = SENSOR_INTERVAL; // Gui moi khi co mau cam bien moi
 
 // Neu relay kich muc LOW, doi HIGH thanh LOW va nguoc lai
 const int RELAY_ON  = HIGH;

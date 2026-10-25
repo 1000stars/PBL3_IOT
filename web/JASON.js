@@ -1,5 +1,6 @@
-const API_URL = 'http://192.168.1.12/Api/get.php';
+const API_URL = '../Api/get.php';
 const REFRESH_INTERVAL = 60000;
+const CONNECTION_TIMEOUT = 15 * 60 * 1000;
 
 const RANGES = [
 	{ key: '1h', label: '1 giờ', duration: 60 * 60 * 1000 },
@@ -281,11 +282,15 @@ function updateChart(records) {
 	}
 }
 
-function updateClock() {
-	const now = new Date();
-	const time = now.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' });
-	const date = now.toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'long' });
-	document.getElementById('time-label').textContent = `${date.charAt(0).toUpperCase()}${date.slice(1)}, ${time}`;
+function updateLastUpdated(timestamp) {
+	document.getElementById('time-label').textContent = timestamp.toLocaleString('vi-VN', {
+		day: '2-digit',
+		month: '2-digit',
+		year: 'numeric',
+		hour: '2-digit',
+		minute: '2-digit',
+		second: '2-digit',
+	});
 }
 
 async function refreshData() {
@@ -315,10 +320,20 @@ async function refreshData() {
 			.filter(Boolean)
 			.sort((a, b) => a.timestamp - b.timestamp);
 
+		const latestRecord = payload.latest_record
+			? parseSensorRecord(payload.latest_record)
+			: records[records.length - 1] || null;
+		const isConnected = latestRecord
+			&& Date.now() - latestRecord.timestamp.getTime() <= CONNECTION_TIMEOUT;
 		currentRecords = records;
-		connectionStatus.classList.remove('disconnected');
-		connectionLabel.textContent = records.length ? 'Đã kết nối' : 'Chưa có dữ liệu';
-		if (records.length) updateSensorCards(records[records.length - 1]);
+		connectionStatus.classList.toggle('disconnected', !isConnected);
+		connectionLabel.textContent = isConnected ? 'Đã kết nối' : 'Mất kết nối';
+		if (latestRecord) {
+			updateSensorCards(latestRecord);
+			updateLastUpdated(latestRecord.timestamp);
+		} else {
+			document.getElementById('time-label').textContent = 'Chưa có dữ liệu';
+		}
 		updateChart(records);
 	} catch (error) {
 		if (sequence !== requestSequence) return;
@@ -331,7 +346,5 @@ async function refreshData() {
 loadForecast();
 renderRangeButtons();
 renderMetricChips();
-updateClock();
 refreshData();
 window.setInterval(refreshData, REFRESH_INTERVAL);
-window.setInterval(updateClock, 30000);
