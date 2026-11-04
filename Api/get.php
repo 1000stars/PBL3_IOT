@@ -31,6 +31,16 @@ try {
                                 WHERE table_schema = ? AND table_name = ?");
     $check_table->execute([$db, $table_name]);
 
+    $latest_stmt = $pdo->query(
+        "SELECT humidity, tempt, light, moisture, dateupdate
+         FROM `$table_name`
+         ORDER BY dateupdate DESC
+         LIMIT 1"
+    );
+    $latest_record = $latest_stmt->fetch();
+    if ($latest_record === false) {
+        $latest_record = null;
+    }
 
     // Xây dựng câu truy vấn
     $sql = "SELECT humidity, tempt, light, moisture, dateupdate 
@@ -75,6 +85,7 @@ try {
             "end_time" => $end_time
         ],
         "data" => $data,
+        "latest_record" => $latest_record,
         "timestamp" => date('Y-m-d H:i:s')
     ], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 
