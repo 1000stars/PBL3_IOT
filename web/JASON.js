@@ -4,6 +4,7 @@ const CONNECTION_TIMEOUT = 15 * 60 * 1000;
 const MQTT_BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
 const MQTT_USERNAME = 'PBL';
 const MQTT_TOPIC = 'control';
+const MQTT_STATUS_TOPIC = 'trangthai';
 
 const RANGES = [
 	{ key: '1h', label: '1 giờ', duration: 60 * 60 * 1000 },
@@ -52,11 +53,37 @@ function initializeWaterControl() {
 	const waterKnob = document.getElementById('water-knob');
 	const waterStatus = document.getElementById('water-status');
 	if (!window.mqtt) {
-		waterStatus.textContent = 'Không tải được thư viện MQTT';
+		waterStatus.textContent = 'Không Hợp Lệ';
+		waterStatus.className = 'ctrl-status status-invalid';
 		return;
 	}
 
-	let pumpIsOn = false;
+	let controlIsOn = false;
+	let motorIsOn = null;
+	const getStatusLabel = () => {
+		if (motorIsOn === null) {
+			waterStatus.className = 'ctrl-status status-waiting';
+			waterStatus.title = 'Đang chờ nhận trạng thái SET và PAYLOAD';
+			return '...';
+		}
+
+		const result = controlIsOn === motorIsOn
+			? controlIsOn ? 'ON' : 'OFF'
+			: 'Failed';
+		waterStatus.className = `ctrl-status status-${result === 'Failed' ? 'fail' : result.toLowerCase()}`;
+		waterStatus.title = `SET: ${controlIsOn ? 'ON' : 'OFF'} · PAYLOAD: ${motorIsOn ? 'ON' : 'OFF'}`;
+		return result;
+	};
+	const showInvalidStatus = () => {
+		waterStatus.textContent = 'Không Hợp Lệ';
+		waterStatus.className = 'ctrl-status status-invalid';
+		waterStatus.removeAttribute('title');
+	};
+	const updateSwitch = isOn => {
+		waterSwitch.setAttribute('aria-pressed', String(isOn));
+		waterSwitch.style.background = isOn ? '#5C8A54' : '#2B3A26';
+		waterKnob.style.transform = isOn ? 'translateX(28px)' : 'translateX(0)';
+	};
 	const client = window.mqtt.connect(MQTT_BROKER_URL, {
 		clientId: `web_control_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 8)}`,
 		username: MQTT_USERNAME,
@@ -68,42 +95,83 @@ function initializeWaterControl() {
 
 	client.on('connect', () => {
 		waterSwitch.disabled = false;
-		waterStatus.textContent = pumpIsOn ? 'Đã gửi lệnh: ON' : 'Đã kết nối, chưa gửi lệnh';
+		waterStatus.textContent = getStatusLabel();
+		client.subscribe(MQTT_STATUS_TOPIC, { qos: 1 }, error => {
+			if (error) {
+				console.error('Không thể đăng ký topic trạng thái MQTT:', error);
+				showInvalidStatus();
+			}
+		});
 	});
 	client.on('reconnect', () => {
 		waterSwitch.disabled = true;
-		waterStatus.textContent = 'Đang kết nối lại MQTT...';
+		showInvalidStatus();
 	});
 	client.on('offline', () => {
 		waterSwitch.disabled = true;
-		waterStatus.textContent = 'Mất kết nối MQTT';
+		showInvalidStatus();
 	});
 	client.on('error', error => {
 		console.error('Lỗi kết nối MQTT:', error);
-		waterStatus.textContent = 'Lỗi kết nối MQTT';
+		showInvalidStatus();
+	});
+
+	client.on('message', (topic, message) => {
+		if (topic !== MQTT_STATUS_TOPIC) return;
+
+		const status = message.toString();
+		let setState;
+		let payloadState;
+		try {
+			const parsedStatus = JSON.parse(status);
+			if (parsedStatus && typeof parsedStatus === 'object') {
+				setState = parsedStatus.SET ?? parsedStatus.set;
+				payloadState = parsedStatus.PAYLOAD ?? parsedStatus.payload;
+			}
+		} catch {
+			const setMatch = status.match(/\bSET\s*:\s*(ON|OFF)\b/i);
+			const payloadMatch = status.match(/\bPAYLOAD\s*:\s*(ON|OFF)\b/i);
+			setState = setMatch?.[1];
+			payloadState = payloadMatch?.[1];
+		}
+
+		if (typeof setState !== 'string' || typeof payloadState !== 'string'
+			|| !['ON', 'OFF'].includes(setState.toUpperCase())
+			|| !['ON', 'OFF'].includes(payloadState.toUpperCase())) {
+			console.warn('Bỏ qua trạng thái MQTT không hợp lệ:', status);
+			showInvalidStatus();
+			return;
+		}
+
+		controlIsOn = setState.toUpperCase() === 'ON';
+		motorIsOn = payloadState.toUpperCase() === 'ON';
+		updateSwitch(controlIsOn);
+		waterStatus.textContent = getStatusLabel();
 	});
 
 	waterSwitch.addEventListener('click', () => {
 		if (!client.connected) return;
 
-		const nextState = !pumpIsOn;
+		const nextState = !controlIsOn;
 		const command = nextState ? 'ON' : 'OFF';
 		const payload = JSON.stringify({ switch: command });
 		waterSwitch.disabled = true;
-		waterStatus.textContent = `Đang gửi lệnh: ${command}`;
+		waterStatus.textContent = command;
+		waterStatus.className = `ctrl-status status-${command.toLowerCase()}`;
+		waterStatus.removeAttribute('title');
 		client.publish(MQTT_TOPIC, payload, { qos: 1, retain: false }, error => {
 			waterSwitch.disabled = !client.connected;
 			if (error) {
 				console.error('Không thể gửi lệnh máy bơm:', error);
-				waterStatus.textContent = 'Gửi lệnh thất bại';
+				showInvalidStatus();
 				return;
 			}
 
-			pumpIsOn = nextState;
-			waterSwitch.setAttribute('aria-pressed', String(pumpIsOn));
-			waterSwitch.style.background = pumpIsOn ? '#5C8A54' : '#2B3A26';
-			waterKnob.style.transform = pumpIsOn ? 'translateX(28px)' : 'translateX(0)';
-			waterStatus.textContent = `Đã gửi lệnh: ${command}`;
+			controlIsOn = nextState;
+			motorIsOn = null;
+			updateSwitch(controlIsOn);
+			waterStatus.textContent = command;
+			waterStatus.className = `ctrl-status status-${command.toLowerCase()}`;
 		});
 	});
 }

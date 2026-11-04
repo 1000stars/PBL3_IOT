@@ -59,6 +59,12 @@ h1,h2{font-family:'Fraunces', serif; margin:0;}
 .ctrl-icon{width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center;}
 .ctrl-name{font-weight:500; margin:0 0 2px;}
 .ctrl-status{font-size:14px; color:var(--muted); margin:0;}
+.ctrl-status.status-on,.ctrl-status.status-off,.ctrl-status.status-fail,.ctrl-status.status-invalid,.ctrl-status.status-waiting{min-width:76px; padding:6px 12px; border:1px solid transparent; border-radius:999px; text-align:center; font-size:13px; font-weight:700; letter-spacing:.04em;}
+.ctrl-status.status-on{color:#A8D99F; background:rgba(92,138,84,.18); border-color:rgba(92,138,84,.5);}
+.ctrl-status.status-off{color:#C9D4BE; background:rgba(138,146,128,.12); border-color:rgba(138,146,128,.35);}
+.ctrl-status.status-fail{color:#FFAAA0; background:rgba(193,80,46,.18); border-color:rgba(193,80,46,.55);}
+.ctrl-status.status-invalid{color:#FFD27F; background:rgba(232,163,61,.16); border-color:rgba(232,163,61,.5);}
+.ctrl-status.status-waiting{color:var(--muted2); background:rgba(138,146,128,.1); border-color:rgba(138,146,128,.25);}
 .switch{width:64px; height:36px; border-radius:999px; border:none; position:relative; cursor:pointer; transition:background .3s; flex-shrink:0;}
 .switch:disabled{cursor:not-allowed; opacity:.65;}
 .switch-knob{position:absolute; top:4px; left:4px; width:28px; height:28px; border-radius:999px; background:#F3EFE1; display:flex; align-items:center; justify-content:center; transition:transform .3s;}

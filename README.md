@@ -39,5 +39,7 @@ Giao diện login: 1 form nhập ID (username) và mật khẩu.
 Dùng dữ liệu JSON giả (mock data) đúng theo API contract để code trước, không cần chờ người 2 xong API thật.
 Sau đó thay mock data bằng API thật để kiểm tra tích hợp.
 
+### API trạng thái động cơ
 
-
+Trang web đăng ký topic MQTT `trangthai` và chuyển trạng thái nhận được lên `/API/status.php`.
+API nhận `POST` JSON dạng `{"set":"ON","payload":"OFF"}` và lưu trạng thái mới nhất vào bảng `motor_status` trong database `pbl3my` (bảng được tạo tự động). Gửi `GET /API/status.php` để đọc trạng thái hiện tại.
