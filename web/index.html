@@ -89,14 +89,16 @@
           </div>
           <div>
             <p class="ctrl-name">Tưới cây thủ công</p>
-            <p class="ctrl-status" id="water-status">Đã tắt</p>
           </div>
         </div>
-        <button class="switch" id="water-switch" style="background:#2B3A26;">
-          <span class="switch-knob" id="water-knob" style="transform:translateX(0);">
-            <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; color:#8A9280;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
-          </span>
-        </button>
+        <div class="ctrl-right">
+          <button class="switch" id="water-switch" type="button" aria-label="Bật hoặc tắt tưới cây" aria-pressed="false" disabled style="background:#2B3A26;">
+            <span class="switch-knob" id="water-knob" style="transform:translateX(0);">
+              <svg class="icon" viewBox="0 0 24 24" style="width:14px; height:14px; color:#8A9280;"><path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/></svg>
+            </span>
+          </button>
+          <p class="ctrl-status" id="water-status" aria-live="polite">Đang kết nối MQTT...</p>
+        </div>
       </div>
     </div>
   </div>
@@ -114,6 +116,7 @@
 
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/mqtt/dist/mqtt.min.js"></script>
 <script src="JASON.js"></script>
 </body>
 </html>

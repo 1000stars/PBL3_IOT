@@ -6,7 +6,7 @@ Môi trường mô phỏng (giai đoạn 1): XAMPP chạy local host
 Giao tiếp sử dụng HTPP và MQTTx
 Giai đoạn 2 (sau khi hoàn thiện): Đưa hệ thống lên Internet qua Cloudflare Tunnel, gắn tên miền tĩnh aaaaa
 jisdjifjisjfisdji
-Phân chia vai trò
+Phân chia vai tròhdjwhfwehfuweh
 
 Member 1: Arduino & Firmware (Khôi)  
 Vai trò: lập trình vi điều khiển đọc cảm biến, gửi dữ liệu qua HTTP (GET/POST) lên server. Làm việc các file .ino  

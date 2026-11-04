@@ -1,6 +1,9 @@
-const API_URL = '../Api/get.php';
+const API_URL = '/API/get.php';
 const REFRESH_INTERVAL = 60000;
 const CONNECTION_TIMEOUT = 15 * 60 * 1000;
+const MQTT_BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
+const MQTT_USERNAME = 'PBL';
+const MQTT_TOPIC = 'control';
 
 const RANGES = [
 	{ key: '1h', label: '1 giờ', duration: 60 * 60 * 1000 },
@@ -43,6 +46,67 @@ let currentRange = '24h';
 let chart;
 let requestSequence = 0;
 let currentRecords = [];
+
+function initializeWaterControl() {
+	const waterSwitch = document.getElementById('water-switch');
+	const waterKnob = document.getElementById('water-knob');
+	const waterStatus = document.getElementById('water-status');
+	if (!window.mqtt) {
+		waterStatus.textContent = 'Không tải được thư viện MQTT';
+		return;
+	}
+
+	let pumpIsOn = false;
+	const client = window.mqtt.connect(MQTT_BROKER_URL, {
+		clientId: `web_control_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 8)}`,
+		username: MQTT_USERNAME,
+		clean: true,
+		connectTimeout: 10000,
+		reconnectPeriod: 3000,
+		keepalive: 30,
+	});
+
+	client.on('connect', () => {
+		waterSwitch.disabled = false;
+		waterStatus.textContent = pumpIsOn ? 'Đã gửi lệnh: ON' : 'Đã kết nối, chưa gửi lệnh';
+	});
+	client.on('reconnect', () => {
+		waterSwitch.disabled = true;
+		waterStatus.textContent = 'Đang kết nối lại MQTT...';
+	});
+	client.on('offline', () => {
+		waterSwitch.disabled = true;
+		waterStatus.textContent = 'Mất kết nối MQTT';
+	});
+	client.on('error', error => {
+		console.error('Lỗi kết nối MQTT:', error);
+		waterStatus.textContent = 'Lỗi kết nối MQTT';
+	});
+
+	waterSwitch.addEventListener('click', () => {
+		if (!client.connected) return;
+
+		const nextState = !pumpIsOn;
+		const command = nextState ? 'ON' : 'OFF';
+		const payload = JSON.stringify({ switch: command });
+		waterSwitch.disabled = true;
+		waterStatus.textContent = `Đang gửi lệnh: ${command}`;
+		client.publish(MQTT_TOPIC, payload, { qos: 1, retain: false }, error => {
+			waterSwitch.disabled = !client.connected;
+			if (error) {
+				console.error('Không thể gửi lệnh máy bơm:', error);
+				waterStatus.textContent = 'Gửi lệnh thất bại';
+				return;
+			}
+
+			pumpIsOn = nextState;
+			waterSwitch.setAttribute('aria-pressed', String(pumpIsOn));
+			waterSwitch.style.background = pumpIsOn ? '#5C8A54' : '#2B3A26';
+			waterKnob.style.transform = pumpIsOn ? 'translateX(28px)' : 'translateX(0)';
+			waterStatus.textContent = `Đã gửi lệnh: ${command}`;
+		});
+	});
+}
 
 function formatDate(date) {
 	const year = date.getFullYear();
@@ -344,6 +408,7 @@ async function refreshData() {
 }
 
 loadForecast();
+initializeWaterControl();
 renderRangeButtons();
 renderMetricChips();
 refreshData();

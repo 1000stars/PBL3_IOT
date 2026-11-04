@@ -55,10 +55,12 @@ h1,h2{font-family:'Fraunces', serif; margin:0;}
 .controls-grid{display:grid; grid-template-columns:minmax(0, 1fr); gap:16px; max-width:520px;}
 .ctrl-card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; display:flex; align-items:center; justify-content:space-between;}
 .ctrl-left{display:flex; align-items:center; gap:12px;}
+.ctrl-right{display:flex; align-items:center; gap:12px;}
 .ctrl-icon{width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center;}
 .ctrl-name{font-weight:500; margin:0 0 2px;}
 .ctrl-status{font-size:14px; color:var(--muted); margin:0;}
 .switch{width:64px; height:36px; border-radius:999px; border:none; position:relative; cursor:pointer; transition:background .3s; flex-shrink:0;}
+.switch:disabled{cursor:not-allowed; opacity:.65;}
 .switch-knob{position:absolute; top:4px; left:4px; width:28px; height:28px; border-radius:999px; background:#F3EFE1; display:flex; align-items:center; justify-content:center; transition:transform .3s;}
 
 .chart-header{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;}
