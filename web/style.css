@@ -52,8 +52,10 @@ h1,h2{font-family:'Fraunces', serif; margin:0;}
 .fc-low{color:var(--muted); font-size:12px;}
 .fc-rain{color:var(--water); font-size:12px;}
 
-.controls-grid{display:grid; grid-template-columns:minmax(0, 1fr); gap:16px; max-width:520px;}
+.controls-grid{display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:16px; max-width:680px;}
 .ctrl-card{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:18px; display:flex; align-items:center; justify-content:space-between;}
+.pump-status-card{align-items:flex-start; flex-direction:column; justify-content:center; gap:12px;}
+.pump-status-title{margin:0;}
 .ctrl-left{display:flex; align-items:center; gap:12px;}
 .ctrl-right{display:flex; align-items:center; gap:12px;}
 .ctrl-icon{width:44px; height:44px; border-radius:999px; display:flex; align-items:center; justify-content:center;}
@@ -68,6 +70,7 @@ h1,h2{font-family:'Fraunces', serif; margin:0;}
 .switch{width:64px; height:36px; border-radius:999px; border:none; position:relative; cursor:pointer; transition:background .3s; flex-shrink:0;}
 .switch:disabled{cursor:not-allowed; opacity:.65;}
 .switch-knob{position:absolute; top:4px; left:4px; width:28px; height:28px; border-radius:999px; background:#F3EFE1; display:flex; align-items:center; justify-content:center; transition:transform .3s;}
+@media(max-width:700px){.controls-grid{grid-template-columns:1fr;}}
 
 .chart-header{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; margin-bottom:16px;}
 .range-group{display:flex; gap:4px; background:var(--panel); border:1px solid var(--line); border-radius:999px; padding:4px;}
