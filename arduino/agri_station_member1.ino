@@ -1,5 +1,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
+#include <PubSubClient.h>     // MQTT
+#include <ArduinoJson.h>      // Xu ly JSON lenh dieu khien
 #include <Wire.h>
 #include <DHT.h>
 #include <BH1750.h>
@@ -13,7 +15,44 @@ const char* WIFI_SSID = "HUY HOANG";
 const char* WIFI_PASSWORD = "16022005";
 
 // Thay IP_ADDRESS bang IPv4 cua may tinh chay XAMPP
+// Kiem tra IPv4 laptop dang chay XAMPP truoc khi su dung HTTP
 const char* SERVER_URL = "http://192.168.1.12/Api/Post.php";
+
+// ==================================================
+// 1B. CAU HINH MQTT (THU NGHIEM - BROKER CONG KHAI)
+// ==================================================
+// broker.emqx.io:1883 KHONG ma hoa, ai cung co the publish/subscribe.
+// Chi demo de hieu MQTT. KHONG dieu khien relay that tu Broker cong khai.
+const char* MQTT_BROKER = "broker.emqx.io";
+const uint16_t MQTT_PORT = 1883;
+
+// Phai dung CHINH XAC cac topic nay trong MQTTX.
+// Su dung prefix rieng de giam kha nang trung topic voi nguoi khac.
+const char* MQTT_CONTROL_TOPIC = "pbl3/son/demo20261108/switch";
+const char* MQTT_STATUS_TOPIC  = "pbl3/son/demo20261108/trangthai";
+const char* MQTT_SENSOR_TOPIC  = "pbl3/son/demo20261108/cambien";
+
+// AN TOAN: de false khi thu bang broker.emqx.io!
+// Khi chuyen sang MQTT broker rieng co xac thuc va kiem tra mach
+// moi can nhac bat true de nhan lenh dieu khien relay thuc te.
+const bool MQTT_ALLOW_REMOTE_RELAY = false;
+const unsigned long MQTT_RECONNECT_INTERVAL = 5000UL;
+const unsigned long MQTT_STATUS_INTERVAL = 15000UL;
+// Yeu cau leader: ON thi giu MANUAL_ON cho den khi OFF.
+// Neu MAT MQTT/Wi-Fi, quay lai AUTO de tranh bom chay khong the tat tu xa.
+
+// CAM BIEN DONG ACS712: TAM TAT cho den khi kiem tra PCB + chia ap ADC.
+// Chan 35 chi la VI DU tren ESP32 thuong; khong dung chung voi GPIO34 do am dat.
+const bool ENABLE_ACS712 = false;
+const int ACS712_ADC_PIN = 35;
+// ACS712 5A: 185 mV/A (cam bien ban 20A/30A co do nhay khac).
+const float ACS712_VOLTS_PER_AMP = 0.185f;
+// Neu mach chia ap: 10k giua OUT va ADC, 15k giua ADC va GND,
+// he so khoi phuc dien ap OUT = (10 + 15) / 15 = 1.6667.
+const float ACS712_ADC_TO_SENSOR_GAIN = 1.6667f;
+// CAN HIEU CHUAN theo dong dien thuc te cua BOM.
+const float ACS712_MOTOR_CURRENT_THRESHOLD_A = 0.15f;
+const unsigned long ACS712_SAMPLE_INTERVAL = 2000UL;
 
 // ==================================================
 // 2. CAU HINH CHAN
@@ -85,6 +124,30 @@ unsigned long lastPumpCheck = 0;
 unsigned long lastOLEDUpdate = 0;
 unsigned long lastHTTPSend = 0;
 
+// Dung WifiClient (khong TLS) chi cho demo Broker cong khai 1883.
+WiFiClient mqttTransport;
+PubSubClient mqttClient(mqttTransport);
+
+enum PumpControlMode { PUMP_AUTO, PUMP_MANUAL_ON };
+PumpControlMode pumpMode = PUMP_AUTO;
+unsigned long lastMQTTConnectAttempt = 0;
+unsigned long lastMQTTStatusSend = 0;
+bool mqttStatusPending = true;
+bool mqttSensorPending = false;
+bool acsReady = false;
+float acsZeroVoltage = NAN;
+float motorCurrentA = NAN;
+bool motorCurrentValid = false;
+unsigned long lastACSRead = 0;
+bool mqttLinkWasConnected = false;
+const char* mqttLastResult = "BOOT";
+String mqttLastCommand = "none";
+
+const char* getPumpModeName() {
+  if (pumpMode == PUMP_MANUAL_ON) return "MANUAL_ON";
+  return "AUTO";
+}
+
 // ==================================================
 // 6. DOC DO AM DAT
 // ==================================================
@@ -140,6 +203,7 @@ void readSensors() {
   }
 
   soilMoisture = readSoilMoisture();
+  mqttSensorPending = true;
 
   if (lightSensorReady) {
     float lux = lightMeter.readLightLevel();
@@ -164,26 +228,217 @@ void readSensors() {
 // 8. DIEU KHIEN MAY BOM
 // ==================================================
 void controlPump() {
-  // Khong tu dong bat bom neu cam bien do am chua hop le
-  if (!soilValid) {
-    digitalWrite(RELAY_PIN, RELAY_OFF);
-    pumpState = false;
-    return;
-  }
-
-  bool shouldPump = (soilMoisture < SOIL_THRESHOLD);
+  // Theo leader: MANUAL_ON bat bom lien tuc cho den lenh OFF.
+  // OFF => AUTO, KHONG phai tat bom cuong buc.
+  bool shouldPump = (pumpMode == PUMP_MANUAL_ON) ||
+                    (pumpMode == PUMP_AUTO && soilValid && (soilMoisture < SOIL_THRESHOLD));
 
   if (shouldPump != pumpState) {
     pumpState = shouldPump;
-
-    digitalWrite(
-      RELAY_PIN,
-      pumpState ? RELAY_ON : RELAY_OFF
-    );
-
+    digitalWrite(RELAY_PIN, pumpState ? RELAY_ON : RELAY_OFF);
     Serial.print("[RELAY] May bom: ");
     Serial.println(pumpState ? "BAT" : "TAT");
+    mqttStatusPending = true;
   }
+}
+
+// ==================================================
+// 8A. ACS712: xac nhan dong co co tieu thu dong dien hay khong.
+// ==================================================
+// ADC ESP32 khong chiu duoc 5V! Phai chia ap / bao dam 0..3.3V
+// va kiem tra chan ADC tren PCB TRUOC khi bat ENABLE_ACS712.
+float acs712ReadSensorVoltage() {
+  const int N = 64;
+  float mVTotal = 0.0f;
+  for (int i=0; i<N; ++i) {
+    mVTotal += analogReadMilliVolts(ACS712_ADC_PIN);
+    delayMicroseconds(350);
+  }
+  return (mVTotal / N / 1000.0f) * ACS712_ADC_TO_SENSOR_GAIN;
+}
+
+void acs712CalibrateZero() {
+  if (!ENABLE_ACS712) return;
+  // Phai bao dam bom dang TAT khi do zero.
+  if (digitalRead(RELAY_PIN) == RELAY_ON) {
+    Serial.println("[ACS712] Khong the hieu chuan khi bom dang BAT");
+    return;
+  }
+  analogSetPinAttenuation(ACS712_ADC_PIN, ADC_11db);
+  delay(200);
+  acsZeroVoltage = acs712ReadSensorVoltage();
+  // Neu dien ap khong phu hop diem giua cua ACS712 5V -> chan/cap nguon sai.
+  acsReady = acsZeroVoltage > 1.5f && acsZeroVoltage < 3.5f;
+  motorCurrentValid = false;
+  Serial.print("[ACS712] Zero V = ");
+  Serial.println(acsZeroVoltage, 3);
+  if (!acsReady) Serial.println("[ACS712] KHONG SAN SANG: kiem tra nguon/chia ap");
+}
+
+void acs712Update() {
+  if (!ENABLE_ACS712 || !acsReady) {
+    motorCurrentValid = false;
+    return;
+  }
+  float v = acs712ReadSensorVoltage();
+  motorCurrentA = fabsf(v - acsZeroVoltage) / ACS712_VOLTS_PER_AMP;
+  motorCurrentValid = isfinite(motorCurrentA);
+  mqttStatusPending = true;
+}
+
+// ==================================================
+// 8B. GIAO THUC MQTT: NHAN LENH / PHAN HOI / CAM BIEN
+// ==================================================
+// set: doc muc trang thai CHAN RELAY da xuat.
+// PAYLOAD: tinh tu DONG DIEN do ACS712 (UNKNOWN neu chua do duoc).
+// ON/ OFF cua lenh khong duoc dung thay cho dong dien do duoc.
+void mqttPublishStatus() {
+  if (!mqttClient.connected()) return;
+
+  JsonDocument doc;
+  const bool relayActuallyHigh = (digitalRead(RELAY_PIN) == RELAY_ON);
+  doc["set"] = relayActuallyHigh ? "ON" : "OFF";
+  if (motorCurrentValid) {
+    doc["PAYLOAD"] = motorCurrentA >= ACS712_MOTOR_CURRENT_THRESHOLD_A ? "ON" : "OFF";
+    doc["current_A"] = roundf(motorCurrentA * 1000.0f) / 1000.0f;
+  } else {
+    doc["PAYLOAD"] = "UNKNOWN";
+  }
+  doc["mode"] = getPumpModeName();
+  doc["command"] = mqttLastCommand;
+  doc["result"] = mqttLastResult;
+
+  char output[256];
+  size_t used = serializeJson(doc, output, sizeof(output));
+  if (used == 0 || used >= sizeof(output) - 1) {
+    Serial.println("[MQTT] Loi serialize trang thai");
+    return;
+  }
+  if (mqttClient.publish(MQTT_STATUS_TOPIC, output, false)) {
+    Serial.print("[MQTT TX] ");
+    Serial.print(MQTT_STATUS_TOPIC);
+    Serial.print(" -> ");
+    Serial.println(output);
+    lastMQTTStatusSend = millis();
+    mqttStatusPending = false;
+  }
+}
+
+void mqttPublishSensors() {
+  if (!mqttClient.connected()) return;
+
+  JsonDocument doc;
+  if (!isnan(temperature)) doc["temp"] = temperature;
+  if (!isnan(humidity)) doc["humidity"] = humidity;
+  if (soilValid) doc["moisture"] = soilMoisture;
+  if (!isnan(lightLux)) doc["light"] = lightLux;
+  doc["pump"] = pumpState ? "ON" : "OFF";
+
+  char output[256];
+  size_t used = serializeJson(doc, output, sizeof(output));
+  if (used == 0 || used >= sizeof(output) - 1) {
+    Serial.println("[MQTT] Loi serialize cam bien");
+    return;
+  }
+  if (mqttClient.publish(MQTT_SENSOR_TOPIC, output, false)) {
+    Serial.print("[MQTT TX] ");
+    Serial.print(MQTT_SENSOR_TOPIC);
+    Serial.print(" -> ");
+    Serial.println(output);
+    mqttSensorPending = false;
+  }
+}
+
+void mqttCallback(char* topic, byte* payload, unsigned int length) {
+  if (strcmp(topic, MQTT_CONTROL_TOPIC) != 0) return;
+  Serial.print("[MQTT RX] "); Serial.print(topic); Serial.print(" -> ");
+  for (unsigned int i=0; i<length; ++i) Serial.print((char)payload[i]);
+  Serial.println();
+
+  // Leader: topic switch, JSON {"switch":"ON"} / {"switch":"OFF"}.
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, payload, length);
+  if (err) {
+    mqttLastCommand = "invalid_json";
+    mqttLastResult = "BAD_JSON";
+    mqttStatusPending = true;
+    return;
+  }
+  String command = doc["switch"] | "";
+  command.trim();
+  command.toUpperCase();
+  mqttLastCommand = command;
+
+  if (command != "ON" && command != "OFF") {
+    mqttLastResult = "UNKNOWN_COMMAND";
+    mqttStatusPending = true;
+    return;
+  }
+
+  // Khong bat relay tu cong khai broker.emqx.io, ke ca khi co nguoi bat nham flag.
+  if (!MQTT_ALLOW_REMOTE_RELAY || strcmp(MQTT_BROKER, "broker.emqx.io") == 0) {
+    mqttLastResult = "DEMO_ONLY_NO_RELAY";
+    mqttStatusPending = true;
+    return;
+  }
+
+  if (command == "ON") {
+    pumpMode = PUMP_MANUAL_ON;
+  } else { // "OFF" => AUTO, doc do am dat de quyet dinh bom.
+    pumpMode = PUMP_AUTO;
+  }
+  mqttLastResult = "COMMAND_ACCEPTED";
+  controlPump();
+  mqttStatusPending = true;
+}
+
+void mqttConnectIfNeeded(unsigned long now) {
+  if (WiFi.status() != WL_CONNECTED || mqttClient.connected()) return;
+  if (lastMQTTConnectAttempt != 0 &&
+      now - lastMQTTConnectAttempt < MQTT_RECONNECT_INTERVAL) return;
+  lastMQTTConnectAttempt = now;
+
+  // Client ID rieng cho moi ESP32; khong dung trung Client ID voi MQTTX.
+  String clientId = "esp32-pbl3-" + String((uint32_t)(ESP.getEfuseMac() & 0xFFFFFFFFULL), HEX);
+  Serial.print("[MQTT] Ket noi ");
+  Serial.print(MQTT_BROKER);
+  Serial.print(":");
+  Serial.println(MQTT_PORT);
+  if (mqttClient.connect(clientId.c_str())) {
+    Serial.println("[MQTT] CONNECTED");
+    if (mqttClient.subscribe(MQTT_CONTROL_TOPIC, 0)) {
+      Serial.print("[MQTT] SUBSCRIBED: ");
+      Serial.println(MQTT_CONTROL_TOPIC);
+    } else {
+      Serial.println("[MQTT] LOI dang ky topic control");
+    }
+    mqttLinkWasConnected = true;
+    mqttLastResult = "CONNECTED";
+    mqttStatusPending = true;
+    mqttSensorPending = true;
+  } else {
+    Serial.print("[MQTT] Loi ket noi, state = ");
+    Serial.println(mqttClient.state());
+  }
+}
+
+void mqttService(unsigned long now) {
+  if (WiFi.status() == WL_CONNECTED) mqttConnectIfNeeded(now);
+  if (!mqttClient.connected()) {
+    // Neu broker bi mat khi dang ON thu cong, tro lai AUTO (fail-safe).
+    if (mqttLinkWasConnected && pumpMode == PUMP_MANUAL_ON) {
+      pumpMode = PUMP_AUTO;
+      mqttLastResult = "CONNECTION_LOST_AUTO";
+      controlPump();
+    }
+    mqttLinkWasConnected = false;
+    return;
+  }
+  mqttClient.loop();
+  if (mqttStatusPending || now - lastMQTTStatusSend >= MQTT_STATUS_INTERVAL) {
+    mqttPublishStatus();
+  }
+  if (mqttSensorPending) mqttPublishSensors();
 }
 
 // ==================================================
@@ -409,6 +664,10 @@ void setup() {
   // ADC ESP32
   analogReadResolution(12);
   analogSetPinAttenuation(SOIL_PIN, ADC_11db);
+  if (ENABLE_ACS712) {
+    pinMode(ACS712_ADC_PIN, INPUT);
+    acs712CalibrateZero();
+  }
 
   // Khoi tao cam bien
   dht.begin();
@@ -435,6 +694,13 @@ void setup() {
 
   // Ket noi Wi-Fi
   connectWiFi();
+
+  // MQTT: no local web server required; MQTTX va ESP32 ket noi cung broker.
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setCallback(mqttCallback);
+  mqttClient.setKeepAlive(60);
+  mqttClient.setSocketTimeout(2); // Han che block khi Broker khong phan hoi
+  mqttClient.setBufferSize(512);
 
   // Doc cam bien ngay khi khoi dong
   readSensors();
@@ -490,17 +756,26 @@ void loop() {
     controlPump();
   }
 
+  // Gia tri thuc te dong co tu ACS712 (neu da dau mach va enable).
+  if (now - lastACSRead >= ACS712_SAMPLE_INTERVAL) {
+    lastACSRead = now;
+    acs712Update();
+  }
+
   // Cap nhat giao dien OLED moi 1 giay
   if (now - lastOLEDUpdate >= OLED_INTERVAL) {
     lastOLEDUpdate = now;
     updateOLED();
   }
 
-  // Gui du lieu len server moi 10 phut
+  // Gui du lieu len server moi 60 giay (theo HTTP_INTERVAL)
   if (now - lastHTTPSend >= HTTP_INTERVAL) {
     lastHTTPSend = now;
     sendDataHTTP();
   }
+
+  // Xu ly MQTT sau cac tac vu cam bien/HTTP.
+  mqttService(millis());
 
   delay(10);
 }
