@@ -52,38 +52,28 @@ function initializeWaterControl() {
 	const waterSwitch = document.getElementById('water-switch');
 	const waterKnob = document.getElementById('water-knob');
 	const waterStatus = document.getElementById('water-status');
-	if (!window.mqtt) {
-		waterStatus.textContent = 'Không Hợp Lệ';
-		waterStatus.className = 'ctrl-status status-invalid';
-		return;
-	}
-
-	let controlIsOn = false;
-	let motorIsOn = null;
-	const getStatusLabel = () => {
-		if (motorIsOn === null) {
-			waterStatus.className = 'ctrl-status status-waiting';
-			waterStatus.title = 'Đang chờ nhận trạng thái SET và PAYLOAD';
-			return '...';
+	const updatePumpStatus = (setIsOn, motorIsOn) => {
+		if (setIsOn === null || motorIsOn === null) {
+			waterStatus.textContent = 'Không Hợp Lệ';
+			waterStatus.className = 'ctrl-status status-invalid';
+			waterStatus.removeAttribute('title');
+			return;
 		}
 
-		const result = controlIsOn === motorIsOn
-			? controlIsOn ? 'ON' : 'OFF'
+		const result = setIsOn === motorIsOn
+			? setIsOn ? 'ON' : 'OFF'
 			: 'Failed';
 		waterStatus.className = `ctrl-status status-${result === 'Failed' ? 'fail' : result.toLowerCase()}`;
-		waterStatus.title = `SET: ${controlIsOn ? 'ON' : 'OFF'} · PAYLOAD: ${motorIsOn ? 'ON' : 'OFF'}`;
-		return result;
-	};
-	const showInvalidStatus = () => {
-		waterStatus.textContent = 'Không Hợp Lệ';
-		waterStatus.className = 'ctrl-status status-invalid';
-		waterStatus.removeAttribute('title');
+		waterStatus.title = `SET: ${setIsOn ? 'ON' : 'OFF'} · PAYLOAD: ${motorIsOn ? 'ON' : 'OFF'}`;
+		waterStatus.textContent = result;
 	};
 	const updateSwitch = isOn => {
 		waterSwitch.setAttribute('aria-pressed', String(isOn));
 		waterSwitch.style.background = isOn ? '#5C8A54' : '#2B3A26';
 		waterKnob.style.transform = isOn ? 'translateX(28px)' : 'translateX(0)';
 	};
+	if (!window.mqtt) return;
+
 	const client = window.mqtt.connect(MQTT_BROKER_URL, {
 		clientId: `web_control_${Date.now().toString(36)}_${Math.random().toString(16).slice(2, 8)}`,
 		username: MQTT_USERNAME,
@@ -95,25 +85,20 @@ function initializeWaterControl() {
 
 	client.on('connect', () => {
 		waterSwitch.disabled = false;
-		waterStatus.textContent = getStatusLabel();
 		client.subscribe(MQTT_STATUS_TOPIC, { qos: 1 }, error => {
 			if (error) {
 				console.error('Không thể đăng ký topic trạng thái MQTT:', error);
-				showInvalidStatus();
 			}
 		});
 	});
 	client.on('reconnect', () => {
 		waterSwitch.disabled = true;
-		showInvalidStatus();
 	});
 	client.on('offline', () => {
 		waterSwitch.disabled = true;
-		showInvalidStatus();
 	});
 	client.on('error', error => {
 		console.error('Lỗi kết nối MQTT:', error);
-		showInvalidStatus();
 	});
 
 	client.on('message', (topic, message) => {
@@ -139,39 +124,30 @@ function initializeWaterControl() {
 			|| !['ON', 'OFF'].includes(setState.toUpperCase())
 			|| !['ON', 'OFF'].includes(payloadState.toUpperCase())) {
 			console.warn('Bỏ qua trạng thái MQTT không hợp lệ:', status);
-			showInvalidStatus();
+			updatePumpStatus(null, null);
 			return;
 		}
 
-		controlIsOn = setState.toUpperCase() === 'ON';
-		motorIsOn = payloadState.toUpperCase() === 'ON';
-		updateSwitch(controlIsOn);
-		waterStatus.textContent = getStatusLabel();
+		const setIsOn = setState.toUpperCase() === 'ON';
+		const motorIsOn = payloadState.toUpperCase() === 'ON';
+		updatePumpStatus(setIsOn, motorIsOn);
 	});
 
 	waterSwitch.addEventListener('click', () => {
 		if (!client.connected) return;
 
-		const nextState = !controlIsOn;
+		const nextState = waterSwitch.getAttribute('aria-pressed') !== 'true';
 		const command = nextState ? 'ON' : 'OFF';
 		const payload = JSON.stringify({ switch: command });
 		waterSwitch.disabled = true;
-		waterStatus.textContent = command;
-		waterStatus.className = `ctrl-status status-${command.toLowerCase()}`;
-		waterStatus.removeAttribute('title');
 		client.publish(MQTT_TOPIC, payload, { qos: 1, retain: false }, error => {
 			waterSwitch.disabled = !client.connected;
 			if (error) {
 				console.error('Không thể gửi lệnh máy bơm:', error);
-				showInvalidStatus();
 				return;
 			}
 
-			controlIsOn = nextState;
-			motorIsOn = null;
-			updateSwitch(controlIsOn);
-			waterStatus.textContent = command;
-			waterStatus.className = `ctrl-status status-${command.toLowerCase()}`;
+			updateSwitch(nextState);
 		});
 	});
 }
