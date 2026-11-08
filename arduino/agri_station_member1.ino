@@ -26,11 +26,11 @@ const char* SERVER_URL = "http://192.168.1.12/Api/Post.php";
 const char* MQTT_BROKER = "broker.emqx.io";
 const uint16_t MQTT_PORT = 1883;
 
-// Phai dung CHINH XAC cac topic nay trong MQTTX.
-// Su dung prefix rieng de giam kha nang trung topic voi nguoi khac.
-const char* MQTT_CONTROL_TOPIC = "pbl3/son/demo20261108/switch";
-const char* MQTT_STATUS_TOPIC  = "pbl3/son/demo20261108/trangthai";
-const char* MQTT_SENSOR_TOPIC  = "pbl3/son/demo20261108/cambien";
+// Theo yeu cau nhom: chi su dung 2 topic control va trangthai.
+// CANH BAO: broker cong khai, topic ngan de bi trung voi nguoi khac!
+// Chi dung de thu truyen nhan, khong dieu khien bom that qua broker nay.
+const char* MQTT_CONTROL_TOPIC = "control";
+const char* MQTT_STATUS_TOPIC  = "trangthai";
 
 // AN TOAN: de false khi thu bang broker.emqx.io!
 // Khi chuyen sang MQTT broker rieng co xac thuc va kiem tra mach
@@ -133,7 +133,6 @@ PumpControlMode pumpMode = PUMP_AUTO;
 unsigned long lastMQTTConnectAttempt = 0;
 unsigned long lastMQTTStatusSend = 0;
 bool mqttStatusPending = true;
-bool mqttSensorPending = false;
 bool acsReady = false;
 float acsZeroVoltage = NAN;
 float motorCurrentA = NAN;
@@ -203,7 +202,6 @@ void readSensors() {
   }
 
   soilMoisture = readSoilMoisture();
-  mqttSensorPending = true;
 
   if (lightSensorReady) {
     float lux = lightMeter.readLightLevel();
@@ -287,7 +285,7 @@ void acs712Update() {
 }
 
 // ==================================================
-// 8B. GIAO THUC MQTT: NHAN LENH / PHAN HOI / CAM BIEN
+// 8B. GIAO THUC MQTT: NHAN LENH TREN control / PHAN HOI TREN trangthai
 // ==================================================
 // set: doc muc trang thai CHAN RELAY da xuat.
 // PAYLOAD: tinh tu DONG DIEN do ACS712 (UNKNOWN neu chua do duoc).
@@ -304,6 +302,7 @@ void mqttPublishStatus() {
   } else {
     doc["PAYLOAD"] = "UNKNOWN";
   }
+  // Thong tin them de de debug MQTTX, khong phai gia tri dong dien.
   doc["mode"] = getPumpModeName();
   doc["command"] = mqttLastCommand;
   doc["result"] = mqttLastResult;
@@ -324,38 +323,13 @@ void mqttPublishStatus() {
   }
 }
 
-void mqttPublishSensors() {
-  if (!mqttClient.connected()) return;
-
-  JsonDocument doc;
-  if (!isnan(temperature)) doc["temp"] = temperature;
-  if (!isnan(humidity)) doc["humidity"] = humidity;
-  if (soilValid) doc["moisture"] = soilMoisture;
-  if (!isnan(lightLux)) doc["light"] = lightLux;
-  doc["pump"] = pumpState ? "ON" : "OFF";
-
-  char output[256];
-  size_t used = serializeJson(doc, output, sizeof(output));
-  if (used == 0 || used >= sizeof(output) - 1) {
-    Serial.println("[MQTT] Loi serialize cam bien");
-    return;
-  }
-  if (mqttClient.publish(MQTT_SENSOR_TOPIC, output, false)) {
-    Serial.print("[MQTT TX] ");
-    Serial.print(MQTT_SENSOR_TOPIC);
-    Serial.print(" -> ");
-    Serial.println(output);
-    mqttSensorPending = false;
-  }
-}
-
 void mqttCallback(char* topic, byte* payload, unsigned int length) {
   if (strcmp(topic, MQTT_CONTROL_TOPIC) != 0) return;
   Serial.print("[MQTT RX] "); Serial.print(topic); Serial.print(" -> ");
   for (unsigned int i=0; i<length; ++i) Serial.print((char)payload[i]);
   Serial.println();
 
-  // Leader: topic switch, JSON {"switch":"ON"} / {"switch":"OFF"}.
+  // Theo leader: subscribe topic control; JSON {"switch":"ON"} / {"switch":"OFF"}.
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload, length);
   if (err) {
@@ -415,7 +389,6 @@ void mqttConnectIfNeeded(unsigned long now) {
     mqttLinkWasConnected = true;
     mqttLastResult = "CONNECTED";
     mqttStatusPending = true;
-    mqttSensorPending = true;
   } else {
     Serial.print("[MQTT] Loi ket noi, state = ");
     Serial.println(mqttClient.state());
@@ -438,7 +411,6 @@ void mqttService(unsigned long now) {
   if (mqttStatusPending || now - lastMQTTStatusSend >= MQTT_STATUS_INTERVAL) {
     mqttPublishStatus();
   }
-  if (mqttSensorPending) mqttPublishSensors();
 }
 
 // ==================================================
