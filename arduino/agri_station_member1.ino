@@ -37,22 +37,14 @@ const char* MQTT_STATUS_TOPIC  = "trangthai";
 // moi can nhac bat true de nhan lenh dieu khien relay thuc te.
 const bool MQTT_ALLOW_REMOTE_RELAY = false;
 const unsigned long MQTT_RECONNECT_INTERVAL = 5000UL;
-const unsigned long MQTT_STATUS_INTERVAL = 15000UL;
+const unsigned long MQTT_STATUS_SETTLE_DELAY = 5000UL;
 // Yeu cau leader: ON thi giu MANUAL_ON cho den khi OFF.
 // Neu MAT MQTT/Wi-Fi, quay lai AUTO de tranh bom chay khong the tat tu xa.
 
-// CAM BIEN DONG ACS712: TAM TAT cho den khi kiem tra PCB + chia ap ADC.
-// Chan 35 chi la VI DU tren ESP32 thuong; khong dung chung voi GPIO34 do am dat.
-const bool ENABLE_ACS712 = false;
-const int ACS712_ADC_PIN = 35;
-// ACS712 5A: 185 mV/A (cam bien ban 20A/30A co do nhay khac).
-const float ACS712_VOLTS_PER_AMP = 0.185f;
-// Neu mach chia ap: 10k giua OUT va ADC, 15k giua ADC va GND,
-// he so khoi phuc dien ap OUT = (10 + 15) / 15 = 1.6667.
-const float ACS712_ADC_TO_SENSOR_GAIN = 1.6667f;
-// CAN HIEU CHUAN theo dong dien thuc te cua BOM.
-const float ACS712_MOTOR_CURRENT_THRESHOLD_A = 0.15f;
-const unsigned long ACS712_SAMPLE_INTERVAL = 2000UL;
+const int STATUS_VOLTAGE_ADC_PIN = 32;
+const float STATUS_VOLTAGE_ON_THRESHOLD = 2.5f;
+const float STATUS_VOLTAGE_MAX = 5.0f;
+const unsigned long STATUS_VOLTAGE_SAMPLE_INTERVAL = 2000UL;
 
 // ==================================================
 // 2. CAU HINH CHAN
@@ -131,22 +123,12 @@ PubSubClient mqttClient(mqttTransport);
 enum PumpControlMode { PUMP_AUTO, PUMP_MANUAL_ON };
 PumpControlMode pumpMode = PUMP_AUTO;
 unsigned long lastMQTTConnectAttempt = 0;
-unsigned long lastMQTTStatusSend = 0;
-bool mqttStatusPending = true;
-bool acsReady = false;
-float acsZeroVoltage = NAN;
-float motorCurrentA = NAN;
-bool motorCurrentValid = false;
-unsigned long lastACSRead = 0;
+bool mqttStatusPending = false;
+unsigned long mqttStatusChangedAt = 0;
+float statusVoltage = NAN;
+bool statusVoltageValid = false;
+unsigned long lastStatusVoltageRead = 0;
 bool mqttLinkWasConnected = false;
-const char* mqttLastResult = "BOOT";
-String mqttLastCommand = "none";
-
-const char* getPumpModeName() {
-  if (pumpMode == PUMP_MANUAL_ON) return "MANUAL_ON";
-  return "AUTO";
-}
-
 // ==================================================
 // 6. DOC DO AM DAT
 // ==================================================
@@ -236,76 +218,37 @@ void controlPump() {
     digitalWrite(RELAY_PIN, pumpState ? RELAY_ON : RELAY_OFF);
     Serial.print("[RELAY] May bom: ");
     Serial.println(pumpState ? "BAT" : "TAT");
+    mqttStatusChangedAt = millis();
     mqttStatusPending = true;
   }
 }
 
-// ==================================================
-// 8A. ACS712: xac nhan dong co co tieu thu dong dien hay khong.
-// ==================================================
-// ADC ESP32 khong chiu duoc 5V! Phai chia ap / bao dam 0..3.3V
-// va kiem tra chan ADC tren PCB TRUOC khi bat ENABLE_ACS712.
-float acs712ReadSensorVoltage() {
-  const int N = 64;
-  float mVTotal = 0.0f;
-  for (int i=0; i<N; ++i) {
-    mVTotal += analogReadMilliVolts(ACS712_ADC_PIN);
-    delayMicroseconds(350);
-  }
-  return (mVTotal / N / 1000.0f) * ACS712_ADC_TO_SENSOR_GAIN;
-}
-
-void acs712CalibrateZero() {
-  if (!ENABLE_ACS712) return;
-  // Phai bao dam bom dang TAT khi do zero.
-  if (digitalRead(RELAY_PIN) == RELAY_ON) {
-    Serial.println("[ACS712] Khong the hieu chuan khi bom dang BAT");
-    return;
-  }
-  analogSetPinAttenuation(ACS712_ADC_PIN, ADC_11db);
-  delay(200);
-  acsZeroVoltage = acs712ReadSensorVoltage();
-  // Neu dien ap khong phu hop diem giua cua ACS712 5V -> chan/cap nguon sai.
-  acsReady = acsZeroVoltage > 1.5f && acsZeroVoltage < 3.5f;
-  motorCurrentValid = false;
-  Serial.print("[ACS712] Zero V = ");
-  Serial.println(acsZeroVoltage, 3);
-  if (!acsReady) Serial.println("[ACS712] KHONG SAN SANG: kiem tra nguon/chia ap");
-}
-
-void acs712Update() {
-  if (!ENABLE_ACS712 || !acsReady) {
-    motorCurrentValid = false;
-    return;
-  }
-  float v = acs712ReadSensorVoltage();
-  motorCurrentA = fabsf(v - acsZeroVoltage) / ACS712_VOLTS_PER_AMP;
-  motorCurrentValid = isfinite(motorCurrentA);
-  mqttStatusPending = true;
+void updateStatusVoltage() {
+  const uint32_t millivolts = analogReadMilliVolts(STATUS_VOLTAGE_ADC_PIN);
+  statusVoltage = millivolts / 1000.0f;
+  statusVoltageValid = isfinite(statusVoltage) && statusVoltage <= STATUS_VOLTAGE_MAX;
+  if (!statusVoltageValid) statusVoltage = NAN;
 }
 
 // ==================================================
-// 8B. GIAO THUC MQTT: NHAN LENH TREN control / PHAN HOI TREN trangthai
+// 8A. GIAO THUC MQTT: NHAN LENH TREN control / PHAN HOI TREN trangthai
 // ==================================================
-// set: doc muc trang thai CHAN RELAY da xuat.
-// PAYLOAD: tinh tu DONG DIEN do ACS712 (UNKNOWN neu chua do duoc).
-// ON/ OFF cua lenh khong duoc dung thay cho dong dien do duoc.
+// set: trang thai relay; PAYLOAD: trang thai dien ap tai GPIO32.
 void mqttPublishStatus() {
   if (!mqttClient.connected()) return;
 
   JsonDocument doc;
   const bool relayActuallyHigh = (digitalRead(RELAY_PIN) == RELAY_ON);
   doc["set"] = relayActuallyHigh ? "ON" : "OFF";
-  if (motorCurrentValid) {
-    doc["PAYLOAD"] = motorCurrentA >= ACS712_MOTOR_CURRENT_THRESHOLD_A ? "ON" : "OFF";
-    doc["current_A"] = roundf(motorCurrentA * 1000.0f) / 1000.0f;
+  if (!statusVoltageValid || !isfinite(statusVoltage)) {
+    doc["PAYLOAD"] = "UNKNOWN";
+  } else if (statusVoltage < STATUS_VOLTAGE_ON_THRESHOLD) {
+    doc["PAYLOAD"] = "ON";
+  } else if (statusVoltage <= STATUS_VOLTAGE_MAX) {
+    doc["PAYLOAD"] = "OFF";
   } else {
     doc["PAYLOAD"] = "UNKNOWN";
   }
-  // Thong tin them de de debug MQTTX, khong phai gia tri dong dien.
-  doc["mode"] = getPumpModeName();
-  doc["command"] = mqttLastCommand;
-  doc["result"] = mqttLastResult;
 
   char output[256];
   size_t used = serializeJson(doc, output, sizeof(output));
@@ -318,7 +261,6 @@ void mqttPublishStatus() {
     Serial.print(MQTT_STATUS_TOPIC);
     Serial.print(" -> ");
     Serial.println(output);
-    lastMQTTStatusSend = millis();
     mqttStatusPending = false;
   }
 }
@@ -333,26 +275,18 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload, length);
   if (err) {
-    mqttLastCommand = "invalid_json";
-    mqttLastResult = "BAD_JSON";
-    mqttStatusPending = true;
     return;
   }
   String command = doc["switch"] | "";
   command.trim();
   command.toUpperCase();
-  mqttLastCommand = command;
 
   if (command != "ON" && command != "OFF") {
-    mqttLastResult = "UNKNOWN_COMMAND";
-    mqttStatusPending = true;
     return;
   }
 
   // Khong bat relay tu cong khai broker.emqx.io, ke ca khi co nguoi bat nham flag.
   if (!MQTT_ALLOW_REMOTE_RELAY || strcmp(MQTT_BROKER, "broker.emqx.io") == 0) {
-    mqttLastResult = "DEMO_ONLY_NO_RELAY";
-    mqttStatusPending = true;
     return;
   }
 
@@ -361,9 +295,7 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
   } else { // "OFF" => AUTO, doc do am dat de quyet dinh bom.
     pumpMode = PUMP_AUTO;
   }
-  mqttLastResult = "COMMAND_ACCEPTED";
   controlPump();
-  mqttStatusPending = true;
 }
 
 void mqttConnectIfNeeded(unsigned long now) {
@@ -387,8 +319,6 @@ void mqttConnectIfNeeded(unsigned long now) {
       Serial.println("[MQTT] LOI dang ky topic control");
     }
     mqttLinkWasConnected = true;
-    mqttLastResult = "CONNECTED";
-    mqttStatusPending = true;
   } else {
     Serial.print("[MQTT] Loi ket noi, state = ");
     Serial.println(mqttClient.state());
@@ -401,14 +331,14 @@ void mqttService(unsigned long now) {
     // Neu broker bi mat khi dang ON thu cong, tro lai AUTO (fail-safe).
     if (mqttLinkWasConnected && pumpMode == PUMP_MANUAL_ON) {
       pumpMode = PUMP_AUTO;
-      mqttLastResult = "CONNECTION_LOST_AUTO";
       controlPump();
     }
     mqttLinkWasConnected = false;
     return;
   }
   mqttClient.loop();
-  if (mqttStatusPending || now - lastMQTTStatusSend >= MQTT_STATUS_INTERVAL) {
+  if (mqttStatusPending &&
+      millis() - mqttStatusChangedAt >= MQTT_STATUS_SETTLE_DELAY) {
     mqttPublishStatus();
   }
 }
@@ -636,10 +566,9 @@ void setup() {
   // ADC ESP32
   analogReadResolution(12);
   analogSetPinAttenuation(SOIL_PIN, ADC_11db);
-  if (ENABLE_ACS712) {
-    pinMode(ACS712_ADC_PIN, INPUT);
-    acs712CalibrateZero();
-  }
+  pinMode(STATUS_VOLTAGE_ADC_PIN, INPUT);
+  analogSetPinAttenuation(STATUS_VOLTAGE_ADC_PIN, ADC_11db);
+  updateStatusVoltage();
 
   // Khoi tao cam bien
   dht.begin();
@@ -687,6 +616,7 @@ void setup() {
   lastPumpCheck = now;
   lastOLEDUpdate = now;
   lastHTTPSend = now;
+  lastStatusVoltageRead = now;
 
   Serial.println("\n[SETUP] Khoi dong hoan tat!");
 }
@@ -728,10 +658,10 @@ void loop() {
     controlPump();
   }
 
-  // Gia tri thuc te dong co tu ACS712 (neu da dau mach va enable).
-  if (now - lastACSRead >= ACS712_SAMPLE_INTERVAL) {
-    lastACSRead = now;
-    acs712Update();
+  // Doc dien ap GPIO32 theo chu ky.
+  if (now - lastStatusVoltageRead >= STATUS_VOLTAGE_SAMPLE_INTERVAL) {
+    lastStatusVoltageRead = now;
+    updateStatusVoltage();
   }
 
   // Cap nhat giao dien OLED moi 1 giay
