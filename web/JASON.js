@@ -1,4 +1,4 @@
-const API_URL = '/API/get.php';
+const API_URL = '/PBL3_IOT/Api/get.php';
 const REFRESH_INTERVAL = 60000;
 const CONNECTION_TIMEOUT = 15 * 60 * 1000;
 const MQTT_BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
