@@ -50,4 +50,5 @@ API nhận `POST` JSON dạng `{"set":"ON","payload":"OFF"}` và lưu trạng th
 - Trong cùng mạng LAN, máy tính khác mở `http://<IP-máy-chạy-XAMPP>/PBL3_IOT/web/`. Cho phép Apache qua Windows Firewall nếu cần.
 - Nếu truy cập ngoài mạng LAN, trỏ domain/Cloudflare Tunnel về Apache; không mở cổng MySQL ra Internet.
 - Dashboard tải lịch sử biểu đồ mỗi 60 giây và kiểm tra bản ghi cảm biến mới nhất mỗi 5 giây. Vì vậy các trình duyệt cùng hiển thị dữ liệu từ database dùng chung, thường cập nhật trong vòng 5 giây sau khi ESP32 gửi dữ liệu.
+- Công tắc tưới thủ công đồng bộ giữa các trình duyệt qua MQTT retained topic `pbl3_iot/farm/pump/manual-ui-state`; đây là trạng thái lệnh trên giao diện, không xác nhận máy bơm thực tế đã chạy. Broker MQTT đang dùng là broker công khai, không dùng cấu hình này để điều khiển thiết bị thật an toàn.
 - Trang đăng nhập hiện chưa kết nối API xác thực; chỉ nên truy cập qua mạng tin cậy cho đến khi xác thực được triển khai trước khi mở website ra Internet.

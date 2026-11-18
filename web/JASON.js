@@ -6,6 +6,7 @@ const MQTT_BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
 const MQTT_USERNAME = 'PBL';
 const MQTT_TOPIC = 'control';
 const MQTT_STATUS_TOPIC = 'trangthai';
+const MQTT_UI_STATE_TOPIC = 'pbl3_iot/farm/pump/manual-ui-state';
 
 const RANGES = [
 	{ key: '1h', label: '1 giờ', duration: 60 * 60 * 1000 },
@@ -92,6 +93,11 @@ function initializeWaterControl() {
 				console.error('Không thể đăng ký topic trạng thái MQTT:', error);
 			}
 		});
+		client.subscribe(MQTT_UI_STATE_TOPIC, { qos: 1 }, error => {
+			if (error) {
+				console.error('Không thể đăng ký topic đồng bộ công tắc MQTT:', error);
+			}
+		});
 	});
 	client.on('reconnect', () => {
 		waterSwitch.disabled = true;
@@ -104,6 +110,16 @@ function initializeWaterControl() {
 	});
 
 	client.on('message', (topic, message) => {
+		if (topic === MQTT_UI_STATE_TOPIC) {
+			const state = message.toString().trim().toUpperCase();
+			if (state !== 'ON' && state !== 'OFF') {
+				console.warn('Bỏ qua trạng thái công tắc MQTT không hợp lệ:', state);
+				return;
+			}
+			updateSwitch(state === 'ON');
+			return;
+		}
+
 		if (topic !== MQTT_STATUS_TOPIC) return;
 
 		const status = message.toString();
@@ -142,14 +158,25 @@ function initializeWaterControl() {
 		const command = nextState ? 'ON' : 'OFF';
 		const payload = JSON.stringify({ switch: command });
 		waterSwitch.disabled = true;
-		client.publish(MQTT_TOPIC, payload, { qos: 1, retain: false }, error => {
-			waterSwitch.disabled = !client.connected;
-			if (error) {
-				console.error('Không thể gửi lệnh máy bơm:', error);
-				return;
+		let completedPublishes = 0;
+		const finishPublish = () => {
+			completedPublishes += 1;
+			if (completedPublishes === 2) {
+				waterSwitch.disabled = !client.connected;
 			}
+		};
 
-			updateSwitch(nextState);
+		client.publish(MQTT_TOPIC, payload, { qos: 1, retain: false }, error => {
+			if (error) console.error('Không thể gửi lệnh máy bơm:', error);
+			finishPublish();
+		});
+		client.publish(MQTT_UI_STATE_TOPIC, command, { qos: 1, retain: true }, error => {
+			if (error) {
+				console.error('Không thể đồng bộ trạng thái công tắc:', error);
+			} else {
+				updateSwitch(nextState);
+			}
+			finishPublish();
 		});
 	});
 }
@@ -259,7 +286,7 @@ async function loadForecast() {
 	const today = getVietnamDateKey();
 	try {
 		const cached = JSON.parse(localStorage.getItem(FORECAST_CACHE_KEY) || 'null');
-		if (cached?.date === today) {
+		if (cached?.date === today && Array.isArray(cached.items) && cached.items.length > 0) {
 			renderForecast(cached.items);
 			return;
 		}
@@ -283,7 +310,6 @@ async function loadForecast() {
 		saveForecastCache(today, forecast);
 		renderForecast(forecast);
 	} catch (error) {
-		saveForecastCache(today, null);
 		renderForecast(null);
 		console.error('Không thể tải dự báo thời tiết Đà Nẵng:', error);
 	}
