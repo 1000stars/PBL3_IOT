@@ -1,5 +1,6 @@
-const API_URL = '/PBL3_IOT/Api/get.php';
+const API_URL = new URL('../Api/get.php', window.location.href).toString();
 const REFRESH_INTERVAL = 60000;
+const LIVE_REFRESH_INTERVAL = 5000;
 const CONNECTION_TIMEOUT = 15 * 60 * 1000;
 const MQTT_BROKER_URL = 'wss://broker.emqx.io:8084/mqtt';
 const MQTT_USERNAME = 'PBL';
@@ -47,6 +48,7 @@ let currentRange = '24h';
 let chart;
 let requestSequence = 0;
 let currentRecords = [];
+let latestRequestInFlight = false;
 
 function initializeWaterControl() {
 	const waterSwitch = document.getElementById('water-switch');
@@ -401,6 +403,37 @@ function updateLastUpdated(timestamp) {
 	});
 }
 
+function getRecordKey(record) {
+	return `${record.timestamp.getTime()}|${record.temp}|${record.humidity}|${record.light}|${record.soil}`;
+}
+
+function updateConnectionStatus(latestRecord) {
+	const connectionLabel = document.getElementById('conn-label');
+	const connectionStatus = document.getElementById('connection-status');
+	const isConnected = latestRecord
+		&& Date.now() - latestRecord.timestamp.getTime() <= CONNECTION_TIMEOUT;
+	connectionStatus.classList.toggle('disconnected', !isConnected);
+	connectionLabel.textContent = isConnected ? 'Đã kết nối' : 'Mất kết nối';
+}
+
+function applyLatestRecord(latestRecord) {
+	updateConnectionStatus(latestRecord);
+	if (!latestRecord) {
+		document.getElementById('time-label').textContent = 'Chưa có dữ liệu';
+		return false;
+	}
+
+	const key = getRecordKey(latestRecord);
+	const exists = currentRecords.some(record => getRecordKey(record) === key);
+	if (!exists) {
+		currentRecords.push(latestRecord);
+		currentRecords.sort((a, b) => a.timestamp - b.timestamp);
+	}
+	updateSensorCards(latestRecord);
+	updateLastUpdated(latestRecord.timestamp);
+	return !exists;
+}
+
 async function refreshData() {
 	const sequence = ++requestSequence;
 	const range = RANGES.find(item => item.key === currentRange);
@@ -409,8 +442,6 @@ async function refreshData() {
 		start_time: formatDate(start),
 		end_time: formatDate(new Date()),
 	});
-	const connectionLabel = document.getElementById('conn-label');
-	const connectionStatus = document.getElementById('connection-status');
 
 	try {
 		const response = await fetch(`${API_URL}?${params}`, { cache: 'no-store' });
@@ -431,23 +462,36 @@ async function refreshData() {
 		const latestRecord = payload.latest_record
 			? parseSensorRecord(payload.latest_record)
 			: records[records.length - 1] || null;
-		const isConnected = latestRecord
-			&& Date.now() - latestRecord.timestamp.getTime() <= CONNECTION_TIMEOUT;
 		currentRecords = records;
-		connectionStatus.classList.toggle('disconnected', !isConnected);
-		connectionLabel.textContent = isConnected ? 'Đã kết nối' : 'Mất kết nối';
-		if (latestRecord) {
-			updateSensorCards(latestRecord);
-			updateLastUpdated(latestRecord.timestamp);
-		} else {
-			document.getElementById('time-label').textContent = 'Chưa có dữ liệu';
-		}
-		updateChart(records);
+		applyLatestRecord(latestRecord);
+		updateChart(currentRecords);
 	} catch (error) {
 		if (sequence !== requestSequence) return;
-		connectionStatus.classList.add('disconnected');
-		connectionLabel.textContent = 'Mất kết nối';
+		updateConnectionStatus(null);
 		console.error('Không thể tải dữ liệu cảm biến:', error);
+	}
+}
+
+async function refreshLatestData() {
+	if (latestRequestInFlight) return;
+	latestRequestInFlight = true;
+
+	try {
+		const response = await fetch(`${API_URL}?latest_only=1`, { cache: 'no-store' });
+		const payload = await response.json();
+		if (!response.ok || payload.status !== 'success') {
+			throw new Error(payload.message || `HTTP ${response.status}`);
+		}
+
+		const latestRecord = payload.latest_record
+			? parseSensorRecord(payload.latest_record)
+			: null;
+		if (applyLatestRecord(latestRecord)) updateChart(currentRecords);
+	} catch (error) {
+		updateConnectionStatus(null);
+		console.error('Không thể tải dữ liệu cảm biến mới nhất:', error);
+	} finally {
+		latestRequestInFlight = false;
 	}
 }
 
@@ -457,3 +501,4 @@ renderRangeButtons();
 renderMetricChips();
 refreshData();
 window.setInterval(refreshData, REFRESH_INTERVAL);
+window.setInterval(refreshLatestData, LIVE_REFRESH_INTERVAL);

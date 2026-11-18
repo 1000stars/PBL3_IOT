@@ -14,6 +14,7 @@ $charset = 'utf8mb4';
 // Nhận tham số
 $start_time = isset($_GET['start_time']) ? $_GET['start_time'].' 00:00:00' : null;
 $end_time = isset($_GET['end_time']) ? $_GET['end_time'].' 23:59:59' : null;
+$latest_only = isset($_GET['latest_only']) && $_GET['latest_only'] === '1';
 
 try {
     // Kết nối database
@@ -40,6 +41,16 @@ try {
     $latest_record = $latest_stmt->fetch();
     if ($latest_record === false) {
         $latest_record = null;
+    }
+
+    if ($latest_only) {
+        echo json_encode([
+            "status" => "success",
+            "data" => $latest_record,
+            "latest_record" => $latest_record,
+            "timestamp" => date('Y-m-d H:i:s')
+        ], JSON_UNESCAPED_UNICODE);
+        exit;
     }
 
     // Xây dựng câu truy vấn

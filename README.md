@@ -43,3 +43,11 @@ Sau đó thay mock data bằng API thật để kiểm tra tích hợp.
 
 Trang web đăng ký topic MQTT `trangthai` và chuyển trạng thái nhận được lên `/API/status.php`.
 API nhận `POST` JSON dạng `{"set":"ON","payload":"OFF"}` và lưu trạng thái mới nhất vào bảng `motor_status` trong database `pbl3my` (bảng được tạo tự động). Gửi `GET /API/status.php` để đọc trạng thái hiện tại.
+
+### Truy cập dashboard từ nhiều máy tính
+
+- Chạy Apache, PHP và MySQL trên **một máy chủ duy nhất**; ESP32 và tất cả trình duyệt phải dùng chung máy chủ/API và database này.
+- Trong cùng mạng LAN, máy tính khác mở `http://<IP-máy-chạy-XAMPP>/PBL3_IOT/web/`. Cho phép Apache qua Windows Firewall nếu cần.
+- Nếu truy cập ngoài mạng LAN, trỏ domain/Cloudflare Tunnel về Apache; không mở cổng MySQL ra Internet.
+- Dashboard tải lịch sử biểu đồ mỗi 60 giây và kiểm tra bản ghi cảm biến mới nhất mỗi 5 giây. Vì vậy các trình duyệt cùng hiển thị dữ liệu từ database dùng chung, thường cập nhật trong vòng 5 giây sau khi ESP32 gửi dữ liệu.
+- Trang đăng nhập hiện chưa kết nối API xác thực; chỉ nên truy cập qua mạng tin cậy cho đến khi xác thực được triển khai trước khi mở website ra Internet.
